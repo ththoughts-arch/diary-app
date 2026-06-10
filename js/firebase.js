@@ -1,11 +1,5 @@
-/* ── firebase.js: Firebase 초기화 + Auth + Firestore ── */
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, getDocs, deleteDoc, query, orderBy }
-  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+/* ── firebase.js: Firebase 초기화 ── */
 
-// ── Firebase 설정 (본인 설정값으로 교체됨) ──
 const firebaseConfig = {
   apiKey: "AIzaSyB8Fyz8VkkLVWH0j22JipTNpJNVb69as8o",
   authDomain: "diary-app-33e4a.firebaseapp.com",
@@ -15,29 +9,30 @@ const firebaseConfig = {
   appId: "1:637574544337:web:6c6cb8da5ae2cba56ebef0"
 };
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+// Firebase SDK (compat 버전 — 일반 script 태그로 로드)
+let db, auth, currentUser = null;
 
-// ── 현재 로그인 유저 ──
-let currentUser = null;
-onAuthStateChanged(auth, (user) => {
-  currentUser = user;
-  if (user) {
-    document.getElementById('auth-screen')?.remove();
-    document.getElementById('app').style.display = 'flex';
-    App.init();
-  } else {
-    document.getElementById('app').style.display = 'none';
-    showAuthScreen();
-  }
-});
+function initFirebase() {
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
 
-// ── 로그인 화면 표시 ──
+  auth.onAuthStateChanged((user) => {
+    currentUser = user;
+    if (user) {
+      document.getElementById('auth-screen')?.remove();
+      document.getElementById('app').style.display = 'flex';
+      App.init();
+    } else {
+      document.getElementById('app').style.display = 'none';
+      showAuthScreen();
+    }
+  });
+}
+
 function showAuthScreen() {
-  let el = document.getElementById('auth-screen');
-  if (el) return;
-  el = document.createElement('div');
+  if (document.getElementById('auth-screen')) return;
+  const el = document.createElement('div');
   el.id = 'auth-screen';
   el.innerHTML = `
     <div class="auth-wrap">
@@ -48,49 +43,32 @@ function showAuthScreen() {
         <button class="auth-tab active" id="tab-login" onclick="FB.switchTab('login')">로그인</button>
         <button class="auth-tab" id="tab-signup" onclick="FB.switchTab('signup')">회원가입</button>
       </div>
-      <div class="auth-form">
-        <input class="auth-input" id="auth-email" type="email" placeholder="이메일" />
-        <input class="auth-input" id="auth-pw" type="password" placeholder="비밀번호 (6자 이상)" />
-        <div class="auth-error" id="auth-error"></div>
-        <button class="auth-btn" id="auth-submit-btn" onclick="FB.submit()">로그인</button>
-      </div>
+      <input class="auth-input" id="auth-email" type="email" placeholder="이메일" />
+      <input class="auth-input" id="auth-pw" type="password" placeholder="비밀번호 (6자 이상)" />
+      <div class="auth-error" id="auth-error"></div>
+      <button class="auth-btn" id="auth-submit-btn" onclick="FB.submit()">로그인</button>
     </div>
   `;
   document.body.appendChild(el);
 }
 
-// ── 탭 전환 ──
 function switchTab(mode) {
   const btn = document.getElementById('auth-submit-btn');
-  const loginTab = document.getElementById('tab-login');
-  const signupTab = document.getElementById('tab-signup');
-  if (mode === 'login') {
-    btn.textContent = '로그인';
-    loginTab.classList.add('active');
-    signupTab.classList.remove('active');
-  } else {
-    btn.textContent = '회원가입';
-    signupTab.classList.add('active');
-    loginTab.classList.remove('active');
-  }
+  document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+  document.getElementById('tab-signup').classList.toggle('active', mode === 'signup');
+  btn.textContent = mode === 'login' ? '로그인' : '회원가입';
   document.getElementById('auth-error').textContent = '';
 }
 
-// ── 로그인/회원가입 제출 ──
 async function submit() {
   const email = document.getElementById('auth-email')?.value?.trim();
   const pw = document.getElementById('auth-pw')?.value?.trim();
   const errEl = document.getElementById('auth-error');
   const isSignup = document.getElementById('auth-submit-btn')?.textContent === '회원가입';
-
   if (!email || !pw) { errEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
-
   try {
-    if (isSignup) {
-      await createUserWithEmailAndPassword(auth, email, pw);
-    } else {
-      await signInWithEmailAndPassword(auth, email, pw);
-    }
+    if (isSignup) await auth.createUserWithEmailAndPassword(email, pw);
+    else await auth.signInWithEmailAndPassword(email, pw);
   } catch (e) {
     const msgs = {
       'auth/email-already-in-use': '이미 사용 중인 이메일이에요.',
@@ -104,100 +82,74 @@ async function submit() {
   }
 }
 
-// ── 로그아웃 ──
 async function logout() {
   if (!confirm('로그아웃 할까요?')) return;
-  await signOut(auth);
+  await auth.signOut();
 }
 
-// ── Firestore CRUD ──
 function uid() { return currentUser?.uid; }
 
-// 일기 저장
+// ── Firestore CRUD ──
 async function saveEntry(dateStr, entry) {
   if (!uid()) return;
-  await setDoc(doc(db, 'users', uid(), 'entries', dateStr), { ...entry, date: dateStr, updatedAt: Date.now() });
+  await db.collection('users').doc(uid()).collection('entries').doc(dateStr).set(entry);
 }
-
-// 일기 불러오기 (전체)
 async function getEntries() {
   if (!uid()) return {};
-  const snap = await getDocs(collection(db, 'users', uid(), 'entries'));
+  const snap = await db.collection('users').doc(uid()).collection('entries').get();
   const result = {};
   snap.forEach(d => { result[d.id] = d.data(); });
   return result;
 }
-
-// 일기 불러오기 (단일)
 async function getEntry(dateStr) {
   if (!uid()) return null;
-  const snap = await getDoc(doc(db, 'users', uid(), 'entries', dateStr));
-  return snap.exists() ? snap.data() : null;
+  const snap = await db.collection('users').doc(uid()).collection('entries').doc(dateStr).get();
+  return snap.exists ? snap.data() : null;
 }
-
-// 설정 저장
-async function saveSettings(settings) {
+async function saveSettings(s) {
   if (!uid()) return;
-  await setDoc(doc(db, 'users', uid(), 'settings', 'main'), settings);
+  await db.collection('users').doc(uid()).collection('settings').doc('main').set(s);
 }
-
-// 설정 불러오기
 async function getSettings() {
   if (!uid()) return null;
-  const snap = await getDoc(doc(db, 'users', uid(), 'settings', 'main'));
-  return snap.exists() ? snap.data() : null;
+  const snap = await db.collection('users').doc(uid()).collection('settings').doc('main').get();
+  return snap.exists ? snap.data() : null;
 }
-
-// 할 일 저장
 async function saveTodos(todos) {
   if (!uid()) return;
-  await setDoc(doc(db, 'users', uid(), 'todos', 'main'), { todos });
+  await db.collection('users').doc(uid()).collection('todos').doc('main').set({ todos });
 }
-
-// 할 일 불러오기
 async function getTodos() {
   if (!uid()) return [];
-  const snap = await getDoc(doc(db, 'users', uid(), 'todos', 'main'));
-  return snap.exists() ? (snap.data().todos || []) : [];
+  const snap = await db.collection('users').doc(uid()).collection('todos').doc('main').get();
+  return snap.exists ? (snap.data().todos || []) : [];
 }
-
-// 건강 데이터 저장
 async function saveHealth(dateStr, data) {
   if (!uid()) return;
-  await setDoc(doc(db, 'users', uid(), 'health', dateStr), data);
+  await db.collection('users').doc(uid()).collection('health').doc(dateStr).set(data);
 }
-
-// 건강 데이터 불러오기
 async function getHealth(dateStr) {
   if (!uid()) return null;
-  const snap = await getDoc(doc(db, 'users', uid(), 'health', dateStr));
-  return snap.exists() ? snap.data() : null;
+  const snap = await db.collection('users').doc(uid()).collection('health').doc(dateStr).get();
+  return snap.exists ? snap.data() : null;
 }
-
-// 알람 저장
 async function saveAlarms(alarms) {
   if (!uid()) return;
-  await setDoc(doc(db, 'users', uid(), 'alarms', 'main'), { alarms });
+  await db.collection('users').doc(uid()).collection('alarms').doc('main').set({ alarms });
 }
-
-// 알람 불러오기
 async function getAlarms() {
   if (!uid()) return null;
-  const snap = await getDoc(doc(db, 'users', uid(), 'alarms', 'main'));
-  return snap.exists() ? (snap.data().alarms || []) : null;
+  const snap = await db.collection('users').doc(uid()).collection('alarms').doc('main').get();
+  return snap.exists ? (snap.data().alarms || []) : null;
 }
-
-// 질문 저장
 async function saveQuestions(questions) {
   if (!uid()) return;
-  await setDoc(doc(db, 'users', uid(), 'questions', 'main'), { questions });
+  await db.collection('users').doc(uid()).collection('questions').doc('main').set({ questions });
 }
-
-// 질문 불러오기
 async function getQuestions() {
   if (!uid()) return null;
-  const snap = await getDoc(doc(db, 'users', uid(), 'questions', 'main'));
-  return snap.exists() ? (snap.data().questions || []) : null;
+  const snap = await db.collection('users').doc(uid()).collection('questions').doc('main').get();
+  return snap.exists ? (snap.data().questions || []) : null;
 }
 
-window.FB = { switchTab, submit, logout, saveEntry, getEntries, getEntry, saveSettings, getSettings, saveTodos, getTodos, saveHealth, getHealth, saveAlarms, getAlarms, saveQuestions, getQuestions, currentUser: () => currentUser };
+const FB = { switchTab, submit, logout, saveEntry, getEntries, getEntry, saveSettings, getSettings, saveTodos, getTodos, saveHealth, getHealth, saveAlarms, getAlarms, saveQuestions, getQuestions, currentUser: () => currentUser };
