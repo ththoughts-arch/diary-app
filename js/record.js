@@ -10,11 +10,11 @@ const Record = (() => {
   let interimTranscript = '';
   let healthData = {};
 
-  function init() {
-    questions = Store.Questions.getAll();
+  async function init() {
+    questions = await Store.Questions.getAll();
     currentStep = 0;
     answers = new Array(questions.length).fill(null).map(() => ({ question: '', answer: '' }));
-    healthData = Store.Health.getByDate(Store.today()) || {};
+    healthData = await Store.Health.getByDate(Store.today()) || {};
     renderStep();
   }
 
