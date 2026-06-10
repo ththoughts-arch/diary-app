@@ -8,10 +8,33 @@
   <title>나의 일기장</title>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="manifest" href="manifest.json" />
+  <style>
+    #auth-screen {
+      position: fixed; inset: 0; z-index: 200;
+      background: linear-gradient(135deg, #3DCFC4 0%, #B5E857 100%);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .auth-wrap {
+      background: white; border-radius: 24px;
+      padding: 32px 24px; width: 320px;
+      display: flex; flex-direction: column; gap: 14px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    }
+    .auth-logo { font-size: 48px; text-align: center; }
+    .auth-title { font-size: 22px; font-weight: 700; color: #222; text-align: center; }
+    .auth-sub { font-size: 13px; color: #888; text-align: center; margin-top: -8px; }
+    .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; background: #f5f5f5; border-radius: 10px; padding: 3px; gap: 3px; }
+    .auth-tab { padding: 8px; font-size: 13px; color: #888; border-radius: 8px; font-weight: 500; cursor: pointer; border: none; background: none; font-family: inherit; }
+    .auth-tab.active { background: white; color: #2AADA3; }
+    .auth-input { width: 100%; background: #f5f5f5; border: none; border-radius: 10px; padding: 12px 14px; font-size: 14px; outline: none; font-family: inherit; }
+    .auth-error { font-size: 12px; color: #E24B4A; min-height: 16px; text-align: center; }
+    .auth-btn { width: 100%; background: linear-gradient(135deg, #3DCFC4, #B5E857); color: white; border: none; border-radius: 12px; padding: 13px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; }
+    .auth-btn:active { opacity: 0.88; }
+  </style>
 </head>
 <body>
 
-  <div id="app">
+  <div id="app" style="display:none">
 
     <!-- ── 홈 화면 ── -->
     <div class="screen active" id="screen-home">
@@ -34,7 +57,6 @@
       </div>
 
       <div class="body-scroll">
-
         <div class="section">
           <div class="section-header">
             <span class="section-label">오늘 할 일</span>
@@ -52,7 +74,7 @@
         <div class="section">
           <div class="section-label">오늘 날씨</div>
           <div class="card">
-            <div class="weather-grid" id="weather-grid">
+            <div class="weather-grid">
               <div class="w-chip"><div class="wc-label">오전</div><div class="wc-val" id="w-am">--°C</div><div class="wc-desc" id="w-am-desc">불러오는 중</div></div>
               <div class="w-chip"><div class="wc-label">오후</div><div class="wc-val" id="w-pm">--°C</div><div class="wc-desc" id="w-pm-desc">불러오는 중</div></div>
             </div>
@@ -65,7 +87,7 @@
         <div class="section">
           <div class="section-label">오늘 건강 요약</div>
           <div class="card">
-            <div class="health-grid" id="health-grid">
+            <div class="health-grid">
               <div class="h-chip"><div class="hc-label">수면 점수</div><div class="hc-val sleep" id="h-sleep">--</div><div class="hc-sub" id="h-sleep-sub">--</div></div>
               <div class="h-chip"><div class="hc-label">스트레스</div><div class="hc-val stress" id="h-stress">--</div><div class="hc-sub" id="h-stress-sub">--</div></div>
               <div class="h-chip"><div class="hc-label">러닝 페이스</div><div class="hc-val run" id="h-run">--</div><div class="hc-sub" id="h-run-sub">--</div></div>
@@ -90,7 +112,6 @@
           <div class="section-label">이번 주 키워드</div>
           <div class="tag-wrap" id="home-tags"></div>
         </div>
-
       </div>
 
       <nav class="nav-bar">
@@ -112,16 +133,11 @@
         </div>
         <div class="progress-bar"><div class="progress-fill" id="rec-progress"></div></div>
       </div>
-
-      <div class="body-scroll" id="rec-body">
-        <!-- JS로 동적 렌더링 -->
-      </div>
-
-      <div class="rec-footer">
+      <div class="body-scroll" id="rec-body"></div>
+      <div class="rec-footer" id="rec-footer">
         <button class="btn-primary" id="rec-next-btn" onclick="Record.next()">다음 질문 →</button>
         <button class="btn-skip" onclick="Record.skip()">이 질문 건너뛰기</button>
       </div>
-
       <nav class="nav-bar">
         <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
         <button class="nav-item active" onclick="App.go('record')" aria-label="기록">🎙</button>
@@ -144,11 +160,7 @@
           <button class="pt-btn" onclick="Report.setPeriod('yearly', this)">연간</button>
         </div>
       </div>
-
-      <div class="body-scroll" id="report-body">
-        <!-- JS로 동적 렌더링 -->
-      </div>
-
+      <div class="body-scroll" id="report-body"></div>
       <nav class="nav-bar">
         <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
         <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
@@ -175,7 +187,6 @@
         </div>
         <div class="cal-grid" id="cal-grid"></div>
       </div>
-
       <div class="body-scroll">
         <div class="section">
           <div class="section-label">이번 달 요약</div>
@@ -186,7 +197,6 @@
           <div class="card" id="cal-entry-list"></div>
         </div>
       </div>
-
       <nav class="nav-bar">
         <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
         <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
@@ -208,15 +218,12 @@
           <button class="set-edit-btn" onclick="Settings.editProfile()">편집</button>
         </div>
       </div>
-
       <div class="body-scroll">
-
         <div class="section">
           <div class="section-label">알람 설정</div>
           <div class="card" id="alarm-list"></div>
           <button class="add-row-btn" onclick="Settings.openAlarmDrawer()">+ 알람 추가하기</button>
         </div>
-
         <div class="section">
           <div class="section-label">기록 모드</div>
           <div class="card">
@@ -234,13 +241,11 @@
             </div>
           </div>
         </div>
-
         <div class="section">
           <div class="section-label">질문 설정</div>
           <div class="card" id="question-list"></div>
           <button class="add-row-btn" onclick="Settings.openQuestionDrawer()">+ 질문 추가하기</button>
         </div>
-
         <div class="section">
           <div class="section-label">앱 설정</div>
           <div class="card">
@@ -261,7 +266,16 @@
             </div>
           </div>
         </div>
-
+        <div class="section">
+          <div class="section-label">계정</div>
+          <div class="card">
+            <div class="set-row" onclick="FB.logout()">
+              <div class="set-icon" style="background:#FCEBEB">🚪</div>
+              <div class="set-text"><div class="st-title" style="color:#A32D2D">로그아웃</div></div>
+              <span class="set-chevron">›</span>
+            </div>
+          </div>
+        </div>
         <div class="section">
           <div class="section-label">데이터</div>
           <div class="card">
@@ -270,16 +284,9 @@
               <div class="set-text"><div class="st-title">일기 내보내기</div><div class="st-sub">JSON 파일로 저장</div></div>
               <span class="set-chevron">›</span>
             </div>
-            <div class="set-row" onclick="Settings.clearData()">
-              <div class="set-icon" style="background:#FCEBEB">🗑</div>
-              <div class="set-text"><div class="st-title" style="color:#A32D2D">전체 데이터 삭제</div><div class="st-sub">복구 불가</div></div>
-              <span class="set-chevron">›</span>
-            </div>
           </div>
         </div>
-
       </div>
-
       <nav class="nav-bar">
         <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
         <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
@@ -303,20 +310,17 @@
     </div>
   </div>
 
-  <!-- JS 모듈 로드 -->
+  <!-- Firebase (module) -->
+  <script type="module" src="js/firebase.js"></script>
+
+  <!-- 앱 JS -->
   <script src="js/store.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
   <script src="js/todo.js"></script>
   <script src="js/record.js"></script>
   <script src="js/report.js"></script>
-  <script src="js/calendar.js"></script>
   <script src="js/settings.js"></script>
-  <script src="js/drawer.js"></script>
-  <script src="js/weather.js"></script>
-  <script src="js/notifications.js"></script>
-  <script>
-    App.init();
-  </script>
+
 </body>
 </html>
