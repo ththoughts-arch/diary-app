@@ -1,95 +1,113 @@
-/* ── store.js: 로컬스토리지 기반 데이터 관리 ── */
+/* ── store.js: Firebase + LocalStorage 하이브리드 저장소 ── */
 const Store = (() => {
 
-  const KEYS = {
-    ENTRIES: 'diary_entries',
-    TODOS: 'diary_todos',
-    SETTINGS: 'diary_settings',
-    ALARMS: 'diary_alarms',
-    QUESTIONS: 'diary_questions',
-    HEALTH: 'diary_health',
-    STREAK: 'diary_streak',
-  };
-
-  function get(key) {
-    try {
-      const v = localStorage.getItem(key);
-      return v ? JSON.parse(v) : null;
-    } catch { return null; }
+  // ── 날짜 유틸 ──
+  function today() { return new Date().toISOString().split('T')[0]; }
+  function formatDate(dateStr) {
+    const d = new Date(dateStr);
+    return `${d.getMonth()+1}월 ${d.getDate()}일`;
+  }
+  function getWeekNumber(d) {
+    const date = new Date(d);
+    date.setHours(0,0,0,0);
+    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+    const week1 = new Date(date.getFullYear(), 0, 4);
+    return 1 + Math.round(((date - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
   }
 
-  function set(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-  }
+  // ── 로컬 캐시 (빠른 렌더링용) ──
+  const cache = { entries: null, todos: null, settings: null, alarms: null, questions: null, health: {} };
 
   // ── 일기 항목 ──
   const Entries = {
-    getAll() { return get(KEYS.ENTRIES) || {}; },
-    getByDate(dateStr) { return this.getAll()[dateStr] || null; },
-    save(dateStr, entry) {
-      const all = this.getAll();
-      all[dateStr] = { ...entry, date: dateStr, updatedAt: Date.now() };
-      set(KEYS.ENTRIES, all);
-      Streak.recalc();
+    async getAll() {
+      if (cache.entries) return cache.entries;
+      try {
+        const data = await FB.getEntries();
+        cache.entries = data || {};
+        return cache.entries;
+      } catch { return {}; }
     },
-    getRecent(n = 5) {
-      const all = this.getAll();
+    async getByDate(dateStr) {
+      const all = await this.getAll();
+      return all[dateStr] || null;
+    },
+    async save(dateStr, entry) {
+      const data = { ...entry, date: dateStr, updatedAt: Date.now() };
+      await FB.saveEntry(dateStr, data);
+      if (!cache.entries) cache.entries = {};
+      cache.entries[dateStr] = data;
+      Streak.recalc(cache.entries);
+    },
+    async getRecent(n = 5) {
+      const all = await this.getAll();
       return Object.values(all)
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, n);
     },
-    getByMonth(year, month) {
+    async getByMonth(year, month) {
       const prefix = `${year}-${String(month).padStart(2,'0')}`;
-      const all = this.getAll();
-      return Object.entries(all)
-        .filter(([k]) => k.startsWith(prefix))
-        .map(([, v]) => v);
+      const all = await this.getAll();
+      return Object.values(all).filter(e => e.date.startsWith(prefix));
     },
-    getByWeek(year, week) {
-      const all = this.getAll();
-      const start = getWeekStart(year, week);
-      const end = new Date(start); end.setDate(end.getDate() + 6);
-      return Object.values(all).filter(e => {
-        const d = new Date(e.date);
-        return d >= start && d <= end;
-      });
-    },
+    clearCache() { cache.entries = null; },
   };
 
   // ── 할 일 ──
   const Todos = {
-    getAll() { return get(KEYS.TODOS) || []; },
-    save(todos) { set(KEYS.TODOS, todos); },
-    add(text) {
-      const todos = this.getAll();
+    async getAll() {
+      if (cache.todos) return cache.todos;
+      try {
+        const data = await FB.getTodos();
+        cache.todos = data || [];
+        return cache.todos;
+      } catch { return []; }
+    },
+    async save(todos) {
+      cache.todos = todos;
+      await FB.saveTodos(todos);
+    },
+    async add(text) {
+      const todos = await this.getAll();
       todos.push({ id: Date.now(), text, done: false, createdAt: Date.now() });
-      this.save(todos);
+      await this.save(todos);
       return todos;
     },
-    toggle(id) {
-      const todos = this.getAll().map(t => t.id === id ? { ...t, done: !t.done } : t);
-      this.save(todos); return todos;
+    async toggle(id) {
+      const todos = (await this.getAll()).map(t => t.id === id ? { ...t, done: !t.done } : t);
+      await this.save(todos);
+      return todos;
     },
-    remove(id) {
-      const todos = this.getAll().filter(t => t.id !== id);
-      this.save(todos); return todos;
+    async remove(id) {
+      const todos = (await this.getAll()).filter(t => t.id !== id);
+      await this.save(todos);
+      return todos;
     },
   };
 
   // ── 설정 ──
   const Settings = {
-    defaults: {
-      mode: 'question',
-      dark: false,
-      weatherEnabled: false,
-      username: '내 일기장',
-      aiFeedbackStyle: 'warm',
+    defaults: { mode: 'question', dark: false, weatherEnabled: false, username: '내 일기장' },
+    async get() {
+      if (cache.settings) return cache.settings;
+      try {
+        const data = await FB.getSettings();
+        cache.settings = { ...this.defaults, ...(data || {}) };
+        return cache.settings;
+      } catch { return this.defaults; }
     },
-    get() { return { ...this.defaults, ...(get(KEYS.SETTINGS) || {}) }; },
-    set(key, value) {
-      const s = this.get(); s[key] = value; set(KEYS.SETTINGS, s);
+    async set(key, value) {
+      const s = await this.get();
+      s[key] = value;
+      cache.settings = s;
+      await FB.saveSettings(s);
     },
-    save(obj) { set(KEYS.SETTINGS, { ...this.get(), ...obj }); },
+    async save(obj) {
+      const s = await this.get();
+      const updated = { ...s, ...obj };
+      cache.settings = updated;
+      await FB.saveSettings(updated);
+    },
   };
 
   // ── 알람 ──
@@ -98,21 +116,34 @@ const Store = (() => {
       { id: 1, time: '21:00', label: '저녁 일기 알람', days: [0,1,2,3,4,5,6], enabled: true },
       { id: 2, time: '07:30', label: '아침 점검 알람', days: [1,2,3,4,5], enabled: true },
     ],
-    getAll() { return get(KEYS.ALARMS) || this.defaults; },
-    save(alarms) { set(KEYS.ALARMS, alarms); },
-    add(alarm) {
-      const all = this.getAll();
+    async getAll() {
+      if (cache.alarms) return cache.alarms;
+      try {
+        const data = await FB.getAlarms();
+        cache.alarms = data || this.defaults;
+        return cache.alarms;
+      } catch { return this.defaults; }
+    },
+    async save(alarms) {
+      cache.alarms = alarms;
+      await FB.saveAlarms(alarms);
+    },
+    async add(alarm) {
+      const all = await this.getAll();
       alarm.id = Date.now();
       all.push(alarm);
-      this.save(all); return all;
+      await this.save(all);
+      return all;
     },
-    remove(id) {
-      const all = this.getAll().filter(a => a.id !== id);
-      this.save(all); return all;
+    async remove(id) {
+      const all = (await this.getAll()).filter(a => a.id !== id);
+      await this.save(all);
+      return all;
     },
-    toggle(id) {
-      const all = this.getAll().map(a => a.id === id ? { ...a, enabled: !a.enabled } : a);
-      this.save(all); return all;
+    async toggle(id) {
+      const all = (await this.getAll()).map(a => a.id === id ? { ...a, enabled: !a.enabled } : a);
+      await this.save(all);
+      return all;
     },
   };
 
@@ -125,37 +156,55 @@ const Store = (() => {
       { id: 4, text: '아이 또는 가족과 있었던 일이 있나요?' },
       { id: 5, text: '내일 하고 싶거나 해야 할 일이 있나요?' },
     ],
-    getAll() { return get(KEYS.QUESTIONS) || this.defaults; },
-    save(qs) { set(KEYS.QUESTIONS, qs); },
-    add(text) {
-      const qs = this.getAll();
-      qs.push({ id: Date.now(), text });
-      this.save(qs); return qs;
+    async getAll() {
+      if (cache.questions) return cache.questions;
+      try {
+        const data = await FB.getQuestions();
+        cache.questions = data || this.defaults;
+        return cache.questions;
+      } catch { return this.defaults; }
     },
-    remove(id) {
-      const qs = this.getAll().filter(q => q.id !== id);
-      this.save(qs); return qs;
+    async save(qs) {
+      cache.questions = qs;
+      await FB.saveQuestions(qs);
+    },
+    async add(text) {
+      const qs = await this.getAll();
+      qs.push({ id: Date.now(), text });
+      await this.save(qs);
+      return qs;
+    },
+    async remove(id) {
+      const qs = (await this.getAll()).filter(q => q.id !== id);
+      await this.save(qs);
+      return qs;
     },
   };
 
   // ── 건강 데이터 ──
   const Health = {
-    getByDate(dateStr) { return (get(KEYS.HEALTH) || {})[dateStr] || null; },
-    save(dateStr, data) {
-      const all = get(KEYS.HEALTH) || {};
-      all[dateStr] = data;
-      set(KEYS.HEALTH, all);
+    async getByDate(dateStr) {
+      if (cache.health[dateStr] !== undefined) return cache.health[dateStr];
+      try {
+        const data = await FB.getHealth(dateStr);
+        cache.health[dateStr] = data;
+        return data;
+      } catch { return null; }
+    },
+    async save(dateStr, data) {
+      cache.health[dateStr] = data;
+      await FB.saveHealth(dateStr, data);
     },
   };
 
   // ── 스트릭 ──
   const Streak = {
-    get() { return get(KEYS.STREAK) || { current: 0, longest: 0, lastDate: null }; },
-    recalc() {
-      const entries = Entries.getAll();
-      const dates = Object.keys(entries).sort();
-      if (!dates.length) { set(KEYS.STREAK, { current: 0, longest: 0, lastDate: null }); return; }
-      let current = 1, longest = 1, prev = new Date(dates[0]);
+    _data: { current: 0, longest: 0, lastDate: null },
+    recalc(entries) {
+      const dates = Object.keys(entries || {}).sort();
+      if (!dates.length) { this._data = { current: 0, longest: 0, lastDate: null }; return; }
+      let current = 1, longest = 1;
+      let prev = new Date(dates[0]);
       for (let i = 1; i < dates.length; i++) {
         const curr = new Date(dates[i]);
         const diff = (curr - prev) / 86400000;
@@ -163,33 +212,14 @@ const Store = (() => {
         else if (diff > 1) { current = 1; }
         prev = curr;
       }
-      const today = new Date().toISOString().split('T')[0];
+      const todayStr = new Date().toISOString().split('T')[0];
       const lastDate = dates[dates.length - 1];
-      const daysSinceLast = (new Date(today) - new Date(lastDate)) / 86400000;
+      const daysSinceLast = (new Date(todayStr) - new Date(lastDate)) / 86400000;
       if (daysSinceLast > 1) current = 0;
-      set(KEYS.STREAK, { current, longest, lastDate });
+      this._data = { current, longest, lastDate };
     },
+    get() { return this._data; },
   };
-
-  // ── 날짜 유틸 ──
-  function today() { return new Date().toISOString().split('T')[0]; }
-  function formatDate(dateStr) {
-    const d = new Date(dateStr);
-    return `${d.getMonth()+1}월 ${d.getDate()}일`;
-  }
-  function getWeekStart(year, week) {
-    const d = new Date(year, 0, 1);
-    const dayOfWeek = d.getDay();
-    d.setDate(d.getDate() - dayOfWeek + (week - 1) * 7);
-    return d;
-  }
-  function getWeekNumber(d) {
-    const date = new Date(d);
-    date.setHours(0,0,0,0);
-    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
-    const week1 = new Date(date.getFullYear(), 0, 4);
-    return 1 + Math.round(((date - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
-  }
 
   return { Entries, Todos, Settings, Alarms, Questions, Health, Streak, today, formatDate, getWeekNumber };
 })();
