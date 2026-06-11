@@ -269,17 +269,6 @@ const Settings = (() => {
   }
 
 
-  async function setOwmKey() {
-    const current = localStorage.getItem('diary_owm_key') || '';
-    const key = prompt('OpenWeatherMap API 키를 입력하세요\nhttps://openweathermap.org/api 에서 무료 발급\n\n현재 키:', current);
-    if (key !== null) {
-      localStorage.setItem('diary_owm_key', key.trim());
-      const el = document.getElementById('owm-key-label');
-      if (el) el.textContent = key ? '키 설정 완료 ✓' : 'OpenWeatherMap 키 입력';
-      if (key) Weather.load();
-    }
-  }
-
   async function editProfile() {
     const s = await Store.Settings.get();
     const name = prompt('일기장 이름을 입력하세요:', s.username);
@@ -301,7 +290,7 @@ const Settings = (() => {
     a.click();
   }
 
-  return { render, openAlarmDrawer, saveAlarm, toggleAlarm, deleteAlarm, openQuestionDrawer, saveQuestion, deleteQuestion, setMode, toggleDark, toggleWeather, editProfile, exportData, setOwmKey };
+  return { render, openAlarmDrawer, saveAlarm, toggleAlarm, deleteAlarm, openQuestionDrawer, saveQuestion, deleteQuestion, setMode, toggleDark, toggleWeather, editProfile, exportData };
 })();
 
 /* ── drawer.js ── */
