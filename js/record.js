@@ -389,13 +389,19 @@ const Record = (() => {
     const body = document.getElementById('rec-body');
     const footer = document.getElementById('rec-footer');
     if (footer) footer.style.display = 'none';
-    body.innerHTML = `<div class="complete-view"><div class="loading"><div class="spinner"></div> AI가 카테고리별로 일기를 정리 중이에요...</div></div>`;
+    body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;gap:12px">
+      <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+      <div style="font-size:14px;color:var(--color-text-secondary);text-align:center">AI가 카테고리별로<br>일기를 정리 중이에요...</div>
+    </div>`;
 
     const freeNote = document.getElementById('free-note')?.value || '';
     const childTime = document.getElementById('child-time')?.value || '';
     const validAnswers = answers.filter(a => a.answer);
     if (freeNote) validAnswers.push({ question: '자유 메모', category: 'etc', catLabel: '✨ 그 외', answer: freeNote });
     if (childTime) validAnswers.push({ question: '아이와 함께한 시간', category: 'parenting', catLabel: '👨‍👧 육아', answer: childTime });
+
+    // 할 일 완료 여부
+    const todos = await Store.Todos.getAll();
 
     const today = Store.today();
     const health = await Store.Health.getByDate(today);
@@ -405,44 +411,134 @@ const Record = (() => {
     const tags = result?.tags || [];
     const mood = result?.mood || '😊';
     const summary = result?.summary || diary.slice(0, 30);
+    const aiFeedback = result?.feedback || '';
 
-    // 카테고리별 요약 저장
+    // 날짜/날씨 정보
+    const now = new Date();
+    const days = ['일','월','화','수','목','금','토'];
+    const dateStr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
+    const amTemp = document.getElementById('w-am')?.textContent || '';
+    const amDesc = document.getElementById('w-am-desc')?.textContent || '';
+    const weatherBadge = amTemp && amTemp !== '--°C' ? `${amTemp} ${amDesc}` : '';
+
+    // 카테고리별 그룹핑
     const categorized = {};
     validAnswers.forEach(a => {
-      if (!categorized[a.category||'etc']) categorized[a.category||'etc'] = [];
-      categorized[a.category||'etc'].push(a);
+      const cat = a.category || 'etc';
+      if (!categorized[cat]) categorized[cat] = [];
+      categorized[cat].push(a);
     });
 
     await Store.Entries.save(today, { diary, tags, mood, summary, answers: validAnswers, categorized, health });
 
-    // 카테고리별 일기 결과 표시
-    const catDisplay = Object.entries(categorized).map(([catId, items]) => {
+    // 카테고리별 카드 HTML
+    const catCards = Object.entries(categorized).map(([catId, items]) => {
       const cat = QuestionPool.getCategoryInfo(catId);
-      return `<div style="margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;color:${cat.color};background:${cat.bg};display:inline-block;padding:2px 9px;border-radius:99px;margin-bottom:5px">${cat.label}</div>
-        <div style="font-size:13px;color:#333;line-height:1.7;padding-left:4px">${items.map(i=>escapeHtml(i.answer)).join(' ')}</div>
+      const qAndA = items.map(i => `
+        <div style="margin-bottom:8px">
+          <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:3px">${escapeHtml(i.question)}</div>
+          <div style="font-size:13px;color:var(--color-text-primary);line-height:1.65">${escapeHtml(i.answer)}</div>
+        </div>`).join('');
+      return `<div style="background:var(--color-background-primary);border-radius:12px;padding:12px 14px">
+        <div style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:${cat.color};background:${cat.bg};padding:3px 10px;border-radius:99px;margin-bottom:8px">${cat.label}</div>
+        ${qAndA}
       </div>`;
     }).join('');
 
+    // 할 일 현황 HTML
+    const todoHtml = todos.length ? `
+      <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
+        <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:10px">☑ 오늘 할 일 완료 현황</div>
+        ${todos.map(t => `<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:${t.done?'var(--color-text-secondary)':'var(--color-text-primary)'};text-decoration:${t.done?'line-through':'none'};padding:4px 0">
+          <span>${t.done?'✅':'⬜'}</span>
+          <span>${escapeHtml(t.text)}</span>
+        </div>`).join('')}
+      </div>` : '';
+
+    // 건강 데이터 HTML
+    const healthHtml = health ? `
+      <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
+        <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:10px">💪 오늘 건강 데이터</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <div style="background:var(--color-background-secondary);border-radius:10px;padding:9px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:3px">수면점수</div>
+            <div style="font-size:16px;font-weight:600;color:#534AB7">${health.sleep||'--'}</div>
+          </div>
+          <div style="background:var(--color-background-secondary);border-radius:10px;padding:9px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:3px">스트레스</div>
+            <div style="font-size:16px;font-weight:600;color:#D85A30">${health.stress||'--'}</div>
+          </div>
+          <div style="background:var(--color-background-secondary);border-radius:10px;padding:9px 8px;text-align:center">
+            <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:3px">러닝</div>
+            <div style="font-size:14px;font-weight:600;color:#085041">${health.pace||'--'}</div>
+          </div>
+        </div>
+      </div>` : '';
+
+    // AI 피드백 HTML
+    const feedbackHtml = aiFeedback ? `
+      <div style="background:linear-gradient(135deg,#E1F5EE,#EEEDFE);border-radius:12px;padding:13px 14px">
+        <div style="font-size:10px;font-weight:600;color:#0F6E56;margin-bottom:6px">✨ AI 피드백</div>
+        <div style="font-size:13px;color:#085041;line-height:1.65">${escapeHtml(aiFeedback)}</div>
+      </div>` : '';
+
+    // 태그 HTML
+    const tagHtml = tags.length ? `
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${tags.map(t=>`<span style="background:#E1F5EE;color:#0F6E56;border-radius:99px;padding:4px 11px;font-size:11px">${escapeHtml(t)}</span>`).join('')}
+      </div>` : '';
+
     body.innerHTML = `
-      <div class="complete-view">
-        <div class="complete-ring">✅</div>
-        <div class="complete-title">오늘 일기가 완성됐어요</div>
-        <div class="complete-sub">AI가 카테고리별로 오늘의 이야기를 정리했어요.</div>
-        <div class="diary-result-card">
-          <div class="diary-result-label">✨ AI가 완성한 오늘의 일기</div>
-          <div class="diary-text">${escapeHtml(diary)}</div>
+      <div style="display:flex;flex-direction:column;gap:12px;padding-bottom:8px">
+
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 0 8px">
+          <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#3DCFC4,#B5E857);display:flex;align-items:center;justify-content:center;font-size:32px">✅</div>
+          <div style="font-size:20px;font-weight:600;color:var(--color-text-primary);text-align:center">오늘 일기가 완성됐어요</div>
+          <div style="font-size:13px;color:var(--color-text-secondary);text-align:center;line-height:1.6">AI가 카테고리별로 오늘의 이야기를<br>정리했어요.</div>
         </div>
-        <div class="diary-result-card" style="margin-top:0">
-          <div class="diary-result-label">📂 카테고리별 기록</div>
-          ${catDisplay}
+
+        <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="font-size:34px">${mood}</div>
+            <div style="flex:1">
+              <div style="font-size:15px;font-weight:600;color:var(--color-text-primary)">${dateStr}</div>
+              <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">${summary}</div>
+            </div>
+            ${weatherBadge ? `<div style="background:var(--color-background-secondary);border-radius:99px;padding:4px 10px;font-size:12px;color:var(--color-text-secondary);white-space:nowrap">🌤 ${weatherBadge}</div>` : ''}
+          </div>
         </div>
-        <div class="tag-wrap" style="justify-content:center">
-          ${tags.map(t=>`<span class="tag tag-g">${escapeHtml(t)}</span>`).join('')}
+
+        <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
+          <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:8px">✨ AI가 완성한 오늘의 일기</div>
+          <div style="font-size:14px;color:var(--color-text-primary);line-height:1.8">${escapeHtml(diary)}</div>
         </div>
-        <button class="btn-primary" onclick="App.go('home')" style="width:100%">🏠 홈으로 돌아가기</button>
+
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:8px">📂 카테고리별 기록</div>
+          <div style="display:flex;flex-direction:column;gap:8px">${catCards}</div>
+        </div>
+
+        ${todoHtml}
+        ${healthHtml}
+        ${feedbackHtml}
+        ${tagHtml}
+
+        <button class="btn-primary" onclick="App.go('home')" style="width:100%;margin-top:4px">🏠 홈으로 돌아가기</button>
+        <button onclick="Record.shareEntry('${today}')" style="width:100%;background:var(--color-background-secondary);color:var(--color-text-secondary);border-radius:14px;padding:11px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px">
+          📤 일기 공유 / 내보내기
+        </button>
+
       </div>`;
   }
 
-  return { init, next, skip, finalize, toggleVoice, retry, confirmVoice, confirmFree, onTextInput, onFreeInput, onGarminSelect, startStep, startFree };
+  function shareEntry(dateStr) {
+    const text = `📖 ${dateStr} 일기\n\n` + (answers.map(a => `[${a.catLabel||''}] ${a.answer}`).join('\n'));
+    if (navigator.share) {
+      navigator.share({ title: '나의 일기', text });
+    } else {
+      navigator.clipboard?.writeText(text).then(() => alert('일기가 클립보드에 복사됐어요!'));
+    }
+  }
+
+  return { init, next, skip, finalize, shareEntry, toggleVoice, retry, confirmVoice, confirmFree, onTextInput, onFreeInput, onGarminSelect, startStep, startFree };
 })();
