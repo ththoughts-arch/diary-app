@@ -213,21 +213,7 @@
           <div class="card" id="alarm-list"></div>
           <button class="add-row-btn" onclick="Settings.openAlarmDrawer()">+ 알람 추가하기</button>
         </div>
-        <div class="section">
-          <div class="section-label">기록 모드</div>
-          <div class="card">
-            <div class="mode-grid">
-              <div class="mode-card active" data-mode="question" onclick="Settings.setMode('question', this)">
-                <div class="mc-icon">💬</div>
-                <div class="mc-title">질문형 대화</div>
-                <div class="mc-desc">AI가 하나씩 물어보는 방식</div>
-              </div>
-              <div class="mode-card" data-mode="free" onclick="Settings.setMode('free', this)">
-                <div class="mc-icon">🎙</div>
-                <div class="mc-title">한 번에 말하기</div>
-                <div class="mc-desc">자유롭게 쭉 말하는 방식</div>
-              </div>
-            </div>
+
           </div>
         </div>
         <div class="section">
@@ -308,6 +294,8 @@
   <script src="js/record.js"></script>
   <script src="js/report.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/weather.js"></script>
+  <script src="js/notifications.js"></script>
 
   <script>
     // Firebase 초기화 후 앱 시작
