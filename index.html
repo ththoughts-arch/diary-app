@@ -70,22 +70,50 @@
           <div class="section-label">오늘 날씨</div>
           <div class="card">
             <div class="weather-grid">
-              <div class="w-chip"><div class="wc-label">오전</div><div class="wc-val" id="w-am">--°C</div><div class="wc-desc" id="w-am-desc">-</div></div>
-              <div class="w-chip"><div class="wc-label">오후</div><div class="wc-val" id="w-pm">--°C</div><div class="wc-desc" id="w-pm-desc">-</div></div>
+              <div class="w-chip">
+                <div class="wc-label">오전</div>
+                <div class="wc-val" id="w-am">--°C</div>
+                <div class="wc-desc" id="w-am-desc">-</div>
+              </div>
+              <div class="w-chip">
+                <div class="wc-label">오후</div>
+                <div class="wc-val" id="w-pm">--°C</div>
+                <div class="wc-desc" id="w-pm-desc">-</div>
+              </div>
             </div>
-            <div class="rain-alert" id="rain-alert" style="display:none">☂️ <span id="rain-msg"></span></div>
+            <div class="rain-alert" id="rain-alert" style="display:none">
+              ☂️ <span id="rain-msg"></span>
+            </div>
           </div>
         </div>
         <div class="section">
           <div class="section-label">오늘 건강 요약</div>
           <div class="card">
             <div class="health-grid">
-              <div class="h-chip"><div class="hc-label">수면 점수</div><div class="hc-val sleep" id="h-sleep">--</div><div class="hc-sub" id="h-sleep-sub">--</div></div>
-              <div class="h-chip"><div class="hc-label">스트레스</div><div class="hc-val stress" id="h-stress">--</div><div class="hc-sub" id="h-stress-sub">--</div></div>
-              <div class="h-chip"><div class="hc-label">러닝 페이스</div><div class="hc-val run" id="h-run">--</div><div class="hc-sub" id="h-run-sub">--</div></div>
-              <div class="h-chip"><div class="hc-label">칼로리</div><div class="hc-val kcal" id="h-kcal">--</div><div class="hc-sub">kcal</div></div>
+              <div class="h-chip">
+                <div class="hc-label">수면 점수</div>
+                <div class="hc-val sleep" id="h-sleep">--</div>
+                <div class="hc-sub" id="h-sleep-sub">--</div>
+              </div>
+              <div class="h-chip">
+                <div class="hc-label">스트레스</div>
+                <div class="hc-val stress" id="h-stress">--</div>
+                <div class="hc-sub" id="h-stress-sub">--</div>
+              </div>
+              <div class="h-chip">
+                <div class="hc-label">러닝 페이스</div>
+                <div class="hc-val run" id="h-run">--</div>
+                <div class="hc-sub" id="h-run-sub">--</div>
+              </div>
+              <div class="h-chip">
+                <div class="hc-label">칼로리</div>
+                <div class="hc-val kcal" id="h-kcal">--</div>
+                <div class="hc-sub">kcal</div>
+              </div>
             </div>
-            <button class="garmin-hint" onclick="App.go('record')">📷 가민 스크린샷 업로드 → AI 자동 추출 ›</button>
+            <button class="garmin-hint" onclick="App.go('record')">
+              📷 가민 스크린샷 업로드 → AI 자동 추출 ›
+            </button>
             <div class="ai-health-rec" id="ai-health-rec" style="display:none">
               <div class="ahr-label">✨ AI 건강 추천</div>
               <div class="ahr-text" id="ahr-text"></div>
@@ -116,14 +144,14 @@
         <div class="sub-header-row">
           <button class="back-btn" onclick="App.go('home')">‹</button>
           <span class="sub-title">오늘 일기 기록</span>
-          <span class="step-pill" id="rec-step">로딩중...</span>
+          <span class="step-pill" id="rec-step">모드 선택</span>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="rec-progress"></div></div>
       </div>
       <div class="body-scroll" id="rec-body">
-        <div class="loading"><div class="spinner"></div> 질문 불러오는 중...</div>
+        <div class="loading"><div class="spinner"></div> 불러오는 중...</div>
       </div>
-      <div class="rec-footer" id="rec-footer">
+      <div class="rec-footer" id="rec-footer" style="display:none">
         <button class="btn-primary" id="rec-next-btn" onclick="Record.next()">다음 질문 →</button>
         <button class="btn-skip" onclick="Record.skip()">이 질문 건너뛰기</button>
       </div>
@@ -208,54 +236,79 @@
         </div>
       </div>
       <div class="body-scroll">
+
         <div class="section">
           <div class="section-label">알람 설정</div>
           <div class="card" id="alarm-list"></div>
           <button class="add-row-btn" onclick="Settings.openAlarmDrawer()">+ 알람 추가하기</button>
         </div>
 
-          </div>
-        </div>
         <div class="section">
           <div class="section-label">질문 설정</div>
           <div class="card" id="question-list"></div>
           <button class="add-row-btn" onclick="Settings.openQuestionDrawer()">+ 질문 추가하기</button>
         </div>
+
         <div class="section">
           <div class="section-label">앱 설정</div>
           <div class="card">
             <div class="set-row">
               <div class="set-icon" style="background:#E1F5EE">🌍</div>
-              <div class="set-text"><div class="st-title">위치 기반 날씨</div><div class="st-sub" id="location-label">위치 미설정</div></div>
-              <div class="toggle" id="toggle-weather" onclick="Settings.toggleWeather()"><div class="toggle-knob"></div></div>
+              <div class="set-text">
+                <div class="st-title">위치 기반 날씨</div>
+                <div class="st-sub" id="location-label">탭해서 위치 설정</div>
+              </div>
+              <div class="toggle" id="toggle-weather" onclick="Settings.toggleWeather()">
+                <div class="toggle-knob"></div>
+              </div>
             </div>
             <div class="set-row">
               <div class="set-icon" style="background:#FAEEDA">🌙</div>
-              <div class="set-text"><div class="st-title">다크 모드</div></div>
-              <div class="toggle" id="toggle-dark" onclick="Settings.toggleDark()"><div class="toggle-knob"></div></div>
+              <div class="set-text">
+                <div class="st-title">다크 모드</div>
+              </div>
+              <div class="toggle" id="toggle-dark" onclick="Settings.toggleDark()">
+                <div class="toggle-knob"></div>
+              </div>
+            </div>
+            <div class="set-row">
+              <div class="set-icon" style="background:#EEEDFE">🤖</div>
+              <div class="set-text">
+                <div class="st-title">AI 피드백 스타일</div>
+                <div class="st-sub">따뜻하고 공감적으로</div>
+              </div>
+              <span class="set-chevron">›</span>
             </div>
           </div>
         </div>
+
         <div class="section">
           <div class="section-label">계정</div>
           <div class="card">
             <div class="set-row" onclick="FB.logout()">
               <div class="set-icon" style="background:#FCEBEB">🚪</div>
-              <div class="set-text"><div class="st-title" style="color:#A32D2D">로그아웃</div></div>
+              <div class="set-text">
+                <div class="st-title" style="color:#A32D2D">로그아웃</div>
+              </div>
               <span class="set-chevron">›</span>
             </div>
           </div>
         </div>
+
         <div class="section">
           <div class="section-label">데이터</div>
           <div class="card">
             <div class="set-row" onclick="Settings.exportData()">
               <div class="set-icon" style="background:#FAEEDA">📤</div>
-              <div class="set-text"><div class="st-title">일기 내보내기</div><div class="st-sub">JSON 파일로 저장</div></div>
+              <div class="set-text">
+                <div class="st-title">일기 내보내기</div>
+                <div class="st-sub">JSON 파일로 저장</div>
+              </div>
               <span class="set-chevron">›</span>
             </div>
           </div>
         </div>
+
       </div>
       <nav class="nav-bar">
         <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
@@ -298,7 +351,6 @@
   <script src="js/notifications.js"></script>
 
   <script>
-    // Firebase 초기화 후 앱 시작
     initFirebase();
   </script>
 
