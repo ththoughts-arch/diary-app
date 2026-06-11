@@ -179,8 +179,16 @@ const Report = (() => {
       </div>` : ''}
     `;
 
+    body.innerHTML += `
+      <div class="section" style="padding-bottom:24px">
+        <button class="btn-primary" onclick="Report.exportPDF()" style="margin-bottom:8px">📄 PDF로 저장 / 인쇄</button>
+        <button class="add-row-btn" onclick="Report.shareEmail()">📧 이메일로 보내기</button>
+      </div>
+`;
+
     // 드로어 데이터 저장
     Report._lifeCards = lifeCards;
+    Report._period = period;
     Report._period = period;
     Report._entries = entries;
     Report._report = report;
