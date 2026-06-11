@@ -15,9 +15,8 @@ const API = (() => {
 
   async function callClaude(systemPrompt, userContent, maxTokens = 1000) {
     if (!ANTHROPIC_API_KEY) {
-      const key = prompt('Claude API 키를 입력하세요 (설정에서 언제든 변경 가능):');
-      if (key) setApiKey(key);
-      else return null;
+      console.warn('Claude API 키가 없습니다. 설정에서 입력해주세요.');
+      return null;
     }
     try {
       const res = await fetch(CLAUDE_ENDPOINT, {
@@ -155,9 +154,8 @@ ${type === 'run' ? '{"duration": "42분", "pace": "5\'38\\"", "heartRate": 숫�
 값을 찾을 수 없으면 null로 반환하세요.`;
 
     if (!ANTHROPIC_API_KEY) {
-      const key = prompt('Claude API 키를 입력하세요:');
-      if (key) setApiKey(key);
-      else return null;
+      console.warn('Claude API 키가 없습니다.');
+      return null;
     }
     try {
       const res = await fetch(CLAUDE_ENDPOINT, {
