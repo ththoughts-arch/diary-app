@@ -226,5 +226,5 @@ ${type === 'run' ? '{"duration": "42분", "pace": "5\'38\\"", "heartRate": 숫�
     } catch (e) { console.error('날씨 API 오류:', e); return null; }
   }
 
-  return { callClaude, generateDiary, generateHealthRec, generateWeeklyReport, extractTodos, parseGarminImage, getWeather, setApiKey };
+  return { callClaude, generateDiary, generateHealthRec, generateWeeklyReport, extractTodos, parseGarminImage, parseGarminImageAuto, getWeather, setApiKey };
 })();
