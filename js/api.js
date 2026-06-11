@@ -46,18 +46,32 @@ const API = (() => {
 
   // ── 일기 변환 ──
   async function generateDiary(answers, healthData) {
-    const systemPrompt = `당신은 사용자의 하루 기록을 자연스러운 일기 문체로 정리해주는 AI입니다.
+    const systemPrompt = `당신은 사용자의 하루 기록을 카테고리별로 정리하여 자연스러운 일기 문체로 작성하는 AI입니다.
 - 1인칭 시점으로 작성하세요.
-- 200~300자 분량의 자연스러운 일기 형식으로 작성하세요.
-- 건강 데이터는 간결하게 녹여내세요.
+- 경제(회사/커리어/재무), 관계(가족/동료/친구), 건강, 자아실현, 육아, 그 외 카테고리를 고려하여 내용을 자연스럽게 녹여주세요.
+- 전체 일기는 300~400자 분량의 자연스러운 문체로 작성하세요.
+- 건강 데이터가 있으면 간결하게 포함하세요.
 - 감정과 생각이 잘 드러나도록 작성하세요.
-- JSON 형식으로 반환하세요: {"diary": "일기내용", "tags": ["#태그1","#태그2"], "mood": "😊", "summary": "한줄요약"}`;
+- JSON 형식으로만 반환하세요:
+{"diary": "일기내용", "tags": ["#태그1","#태그2","#태그3","#태그4","#태그5"], "mood": "😊", "summary": "한줄요약(30자 이내)"}`;
 
-    const userContent = `오늘의 기록:
-${answers.map((a, i) => `Q${i+1}: ${a.question}\nA: ${a.answer}`).join('\n\n')}
-${healthData ? `\n건강 데이터: 수면점수 ${healthData.sleep || '--'}, 스트레스 ${healthData.stress || '--'}, 러닝 ${healthData.run || '없음'}` : ''}
+    const catLabels = { economy:'💰경제', relation:'🤝관계', health:'💪건강', growth:'🌱자아실현', parenting:'👨‍👧육아', etc:'✨그외' };
+    const categorized = {};
+    answers.forEach(a => {
+      const cat = a.category || 'etc';
+      if (!categorized[cat]) categorized[cat] = [];
+      categorized[cat].push(a);
+    });
 
-위 내용을 자연스러운 일기로 정리해주세요.`;
+    const catText = Object.entries(categorized).map(([cat, items]) =>
+      `[${catLabels[cat]||cat}]\n${items.map(i=>`Q: ${i.question}\nA: ${i.answer}`).join('\n')}`
+    ).join('\n\n');
+
+    const userContent = `오늘의 카테고리별 기록:
+${catText}
+${healthData ? `\n건강 데이터: 수면점수 ${healthData.sleep||'--'}, 스트레스 ${healthData.stress||'--'}, 러닝 ${healthData.pace||'없음'}` : ''}
+
+위 내용을 카테고리를 자연스럽게 녹여서 하나의 일기로 정리해주세요.`;
 
     const raw = await callClaude(systemPrompt, userContent, 600);
     if (!raw) return null;
