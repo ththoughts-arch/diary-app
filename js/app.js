@@ -1,13 +1,14 @@
-/* ── app.js: 앱 초기화 및 화면 전환 ── */
+/* ── app.js ── */
 const App = (() => {
-
-  const SCREENS = ['home', 'record', 'report', 'calendar', 'settings'];
+  const SCREENS = ['home','record','report','calendar','settings'];
   let current = 'home';
 
   function go(name) {
     if (!SCREENS.includes(name)) return;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(`screen-${name}`).classList.add('active');
+    // 현재 페이지 URL 해시로 기억 (새로고침 시 유지)
+    history.replaceState(null, '', `#${name}`);
     current = name;
     onEnter(name);
   }
@@ -27,23 +28,22 @@ const App = (() => {
     const greeting = h < 12 ? '좋은 아침이에요 ☀️' : h < 18 ? '좋은 오후예요 🌤' : '좋은 저녁이에요 🌙';
     const greetEl = document.getElementById('home-greeting');
     if (greetEl) greetEl.textContent = greeting;
-
     const days = ['일','월','화','수','목','금','토'];
     const dateEl = document.getElementById('home-date');
     if (dateEl) dateEl.textContent = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
 
-    // 다크모드
+    // 다크모드 — DB 값 기준으로 적용 (토글 오작동 방지)
     const settings = await Store.Settings.get();
-    if (settings.dark) document.body.classList.add('dark');
+    document.body.classList.toggle('dark', !!settings.dark);
 
-    // 홈 렌더
-    Home.render();
+    // 새로고침 시 현재 페이지 복원
+    const hash = location.hash.replace('#', '');
+    const page = SCREENS.includes(hash) ? hash : 'home';
+    go(page);
 
-    // 알림
+    // 알림, 날씨
     Notifications.requestPermission();
     Notifications.scheduleAll();
-
-    // 날씨
     Weather.load();
   }
 
@@ -79,11 +79,10 @@ const Home = (() => {
     }
     list.innerHTML = todos.map(t => `
       <li class="todo-item">
-        <div class="todo-check ${t.done ? 'done' : ''}" onclick="Todo.toggle(${t.id})"></div>
-        <span class="todo-text ${t.done ? 'done' : ''}">${escapeHtml(t.text)}</span>
+        <div class="todo-check ${t.done?'done':''}" onclick="Todo.toggle(${t.id})"></div>
+        <span class="todo-text ${t.done?'done':''}">${escapeHtml(t.text)}</span>
         <button class="todo-del" onclick="Todo.remove(${t.id})">✕</button>
-      </li>
-    `).join('');
+      </li>`).join('');
   }
 
   async function renderRecent() {
@@ -98,8 +97,8 @@ const Home = (() => {
       <div class="entry-row" onclick="Drawer.showEntry('${e.date}')">
         <div class="entry-dot" style="background:#EEEDFE">📖</div>
         <div class="entry-meta">
-          <div class="entry-title">${escapeHtml(e.summary || e.diary?.slice(0,30) || '오늘의 일기')}</div>
-          <div class="entry-preview">${escapeHtml(e.preview || '')}</div>
+          <div class="entry-title">${escapeHtml(e.summary||e.diary?.slice(0,30)||'오늘의 일기')}</div>
+          <div class="entry-preview">${escapeHtml(e.preview||'')}</div>
         </div>
         <div class="entry-date">${formatRelative(e.date)}</div>
       </div>`).join('');
@@ -110,28 +109,29 @@ const Home = (() => {
     if (!el) return;
     const entries = await Store.Entries.getRecent(7);
     const tagMap = {};
-    entries.forEach(e => (e.tags || []).forEach(t => { tagMap[t] = (tagMap[t] || 0) + 1; }));
-    const tags = Object.entries(tagMap).sort((a,b) => b[1]-a[1]).slice(0,8).map(([t]) => t);
+    entries.forEach(e => (e.tags||[]).forEach(t => { tagMap[t] = (tagMap[t]||0)+1; }));
+    const tags = Object.entries(tagMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([t])=>t);
     const colors = ['tag-p','tag-g','tag-a','tag-g','tag-p','tag-a','tag-c','tag-g'];
-    el.innerHTML = tags.map((t,i) => `<span class="tag ${colors[i%colors.length]}">${escapeHtml(t)}</span>`).join('');
+    el.innerHTML = tags.map((t,i)=>`<span class="tag ${colors[i%colors.length]}">${escapeHtml(t)}</span>`).join('');
   }
 
   async function renderHealth() {
     const today = Store.today();
     const health = await Store.Health.getByDate(today);
     if (!health) return;
-    const setVal = (id, v, subId, sub) => {
-      const el = document.getElementById(id); if (el) el.textContent = v || '--';
-      if (subId) { const s = document.getElementById(subId); if(s) s.textContent = sub || '--'; }
+    const set = (id, v, sid, s) => {
+      const el = document.getElementById(id); if(el) el.textContent = v||'--';
+      if(sid){ const se = document.getElementById(sid); if(se) se.textContent = s||'--'; }
     };
-    setVal('h-sleep', health.sleep, 'h-sleep-sub', health.sleepHours || '--');
-    setVal('h-stress', health.stress, 'h-stress-sub', health.stressLabel || '--');
-    setVal('h-run', health.pace, 'h-run-sub', health.runDetails || '--');
-    setVal('h-kcal', health.calories);
-    const recEl = document.getElementById('ai-health-rec');
-    if (recEl && health.aiRec) {
-      document.getElementById('ahr-text').textContent = health.aiRec;
-      recEl.style.display = 'block';
+    set('h-sleep', health.sleep, 'h-sleep-sub', health.sleepHours||'--');
+    set('h-stress', health.stress, 'h-stress-sub', health.stressLabel||'--');
+    set('h-run', health.pace, 'h-run-sub', health.duration||'--');
+    set('h-kcal', health.calories);
+    if (health.aiRec) {
+      const rec = document.getElementById('ai-health-rec');
+      const txt = document.getElementById('ahr-text');
+      if (rec) rec.style.display = 'block';
+      if (txt) txt.textContent = health.aiRec;
     }
   }
 
@@ -148,7 +148,6 @@ const Home = (() => {
   return { render, renderTodos };
 })();
 
-// 공용 유틸
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
