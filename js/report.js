@@ -44,9 +44,14 @@ const Report = (() => {
       return;
     }
 
-    body.innerHTML = `<div class="loading"><div class="spinner"></div> AI가 리포트를 생성 중이에요...</div>`;
+    body.innerHTML = `<div class="loading"><div class="spinner"></div> 리포트를 생성 중이에요...</div>`;
 
-    const report = await API.generateWeeklyReport(entries);
+    let report = null;
+    try {
+      report = await API.generateWeeklyReport(entries);
+    } catch(e) {
+      console.error('리포트 생성 오류:', e);
+    }
     const moods = entries.map(e => e.mood || '😊');
     const tags = [...new Set(entries.flatMap(e => e.tags || []))].slice(0, 8);
     const healthEntries = entries.map(e => e.health).filter(Boolean);
@@ -68,7 +73,7 @@ const Report = (() => {
           </div>`;
         }).join('')}
       </div>
-      <div style="font-size:12px;color:#888;line-height:1.5">${report?.moodSummary || '감정 흐름을 분석 중이에요.'}</div>
+      <div style="font-size:12px;color:#888;line-height:1.5">${report?.moodSummary || '이번 주 감정 흐름이에요.'}</div>
     ` : '';
 
     const lifeData = report?.lifeSummary || {};
@@ -86,7 +91,7 @@ const Report = (() => {
         <div class="section-label">AI 총평</div>
         <div class="ai-narrative">
           <div class="an-label">✨ AI가 읽은 나의 ${period === 'weekly' ? '한 주' : period === 'monthly' ? '한 달' : '올해'}</div>
-          <div class="an-title">"${escapeHtml(report?.title || '기록을 분석 중이에요')}"</div>
+          <div class="an-title">"${escapeHtml(report?.title || '이번 기간의 기록이에요')}"</div>
           <div class="an-body">${escapeHtml(report?.narrative || '')}</div>
         </div>
       </div>
@@ -179,12 +184,13 @@ const Report = (() => {
       </div>` : ''}
     `;
 
-    body.innerHTML += `
-      <div class="section" style="padding-bottom:24px">
-        <button class="btn-primary" onclick="Report.exportPDF()" style="margin-bottom:8px">📄 PDF로 저장 / 인쇄</button>
-        <button class="add-row-btn" onclick="Report.shareEmail()">📧 이메일로 보내기</button>
-      </div>
-`;
+    const pdfSection = document.createElement('div');
+    pdfSection.className = 'section';
+    pdfSection.style.paddingBottom = '24px';
+    pdfSection.innerHTML = `
+      <button class="btn-primary" onclick="Report.exportPDF()" style="margin-bottom:8px">📄 PDF로 저장 / 인쇄</button>
+      <button class="add-row-btn" onclick="Report.shareEmail()">📧 이메일로 보내기</button>`;
+    body.appendChild(pdfSection);
 
     // 드로어 데이터 저장
     Report._lifeCards = lifeCards;
