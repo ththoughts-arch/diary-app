@@ -53,7 +53,7 @@ const API = (() => {
 - 건강 데이터가 있으면 간결하게 포함하세요.
 - 감정과 생각이 잘 드러나도록 작성하세요.
 - JSON 형식으로만 반환하세요:
-{"diary": "일기내용", "tags": ["#태그1","#태그2","#태그3","#태그4","#태그5"], "mood": "😊", "summary": "한줄요약(30자 이내)"}`;
+{"diary": "일기내용", "tags": ["#태그1","#태그2","#태그3","#태그4","#태그5"], "mood": "😊", "summary": "한줄요약(30자 이내)", "feedback": "따뜻한 AI 피드백 1~2문장"}`;
 
     const catLabels = { economy:'💰경제', relation:'🤝관계', health:'💪건강', growth:'🌱자아실현', parenting:'👨‍👧육아', etc:'✨그외' };
     const categorized = {};
@@ -78,7 +78,7 @@ ${healthData ? `\n건강 데이터: 수면점수 ${healthData.sleep||'--'}, 스�
     try {
       const clean = raw.replace(/```json|```/g, '').trim();
       return JSON.parse(clean);
-    } catch { return { diary: raw, tags: [], mood: '😊', summary: '오늘의 일기' }; }
+    } catch { return { diary: raw, tags: [], mood: '😊', summary: '오늘의 일기', feedback: '' }; }
   }
 
   // ── AI 건강 추천 ──
