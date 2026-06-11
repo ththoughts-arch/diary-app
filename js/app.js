@@ -41,9 +41,10 @@ const App = (() => {
     const page = SCREENS.includes(hash) ? hash : 'home';
     go(page);
 
-    // 알림, 날씨
+    // 알림
     Notifications.requestPermission();
     Notifications.scheduleAll();
+    // 날씨 — Open-Meteo (무료, 키 불필요, 항상 로드)
     Weather.load();
   }
 
