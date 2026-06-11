@@ -271,11 +271,19 @@
                 <div class="toggle-knob"></div>
               </div>
             </div>
-            <div class="set-row">
+            <div class="set-row" onclick="Settings.openFeedbackStyleDrawer()">
               <div class="set-icon" style="background:#EEEDFE">🤖</div>
               <div class="set-text">
                 <div class="st-title">AI 피드백 스타일</div>
-                <div class="st-sub">따뜻하고 공감적으로</div>
+                <div class="st-sub" id="feedback-style-label">따뜻하고 공감적으로</div>
+              </div>
+              <span class="set-chevron">›</span>
+            </div>
+            <div class="set-row" onclick="Settings.openApiKeyDrawer()">
+              <div class="set-icon" style="background:#E1F5EE">🔑</div>
+              <div class="set-text">
+                <div class="st-title">Claude API 키</div>
+                <div class="st-sub" id="api-key-label">탭해서 키 입력</div>
               </div>
               <span class="set-chevron">›</span>
             </div>
@@ -298,7 +306,7 @@
         <div class="section">
           <div class="section-label">데이터</div>
           <div class="card">
-            <div class="set-row" onclick="Settings.exportData()">
+            <div class="set-row" onclick="Settings.exportData()" style="cursor:pointer">
               <div class="set-icon" style="background:#FAEEDA">📤</div>
               <div class="set-text">
                 <div class="st-title">일기 내보내기</div>
