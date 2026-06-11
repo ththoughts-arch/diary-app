@@ -76,9 +76,8 @@ const Record = (() => {
           <div class="card">
             <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:10px">📷 가민 스크린샷 업로드</div>
             <div style="display:flex;flex-direction:column;gap:8px">
-              ${renderUploadLabel('sleep','💤','수면 분석')}
-              ${renderUploadLabel('stress','🧠','스트레스')}
-              ${renderUploadLabel('run','🏃','러닝 (달린 경우만)')}
+              ${renderUploadLabel('health','❤️‍🩹','건강 분석 (수면+스트레스)')}
+              ${renderUploadLabel('run','🏃','러닝 활동 (달린 경우만)')}
             </div>
             <div id="garmin-parse-status" style="display:none;margin-top:10px">
               <div class="loading"><div class="spinner"></div> AI가 이미지 분석 중...</div>
@@ -90,10 +89,10 @@ const Record = (() => {
 
   function renderUploadLabel(type, icon, label) {
     const h = healthData;
-    const isDone = type==='sleep'?!!h.sleep:type==='stress'?!!h.stress:!!h.pace;
-    const statusText = type==='sleep'?(h.sleep?`수면점수 ${h.sleep} 파싱완료`:'탭해서 이미지 선택')
-      :type==='stress'?(h.stress?`스트레스 ${h.stress} 파싱완료`:'탭해서 이미지 선택')
-      :(h.pace?`페이스 ${h.pace} 파싱완료`:'탭해서 이미지 선택');
+    const isDone = type==='health'?(!!h.sleep||!!h.stress):type==='run'?!!h.pace:false;
+    const statusText = type==='health'
+      ? (h.sleep||h.stress ? `수면점수 ${h.sleep||'--'} · 스트레스 ${h.stress||'--'} 파싱완료` : '수면·스트레스 스크린샷 선택')
+      : (h.pace?`페이스 ${h.pace} 파싱완료`:'탭해서 이미지 선택');
     return `<label style="display:flex;align-items:center;gap:10px;background:var(--color-background-secondary);border-radius:10px;padding:11px 13px;cursor:pointer">
       <span style="font-size:18px">${icon}</span>
       <div style="flex:1">
@@ -143,15 +142,15 @@ const Record = (() => {
           ${answers[currentStep]?.answer ? `
             <div style="font-size:11px;color:#2AADA3;margin-top:6px;padding-left:2px">✓ 이 질문은 기록됐어요. 수정하려면 위 내용을 바꿔주세요.</div>` : ''}
         </div>
-        <div style="display:flex;gap:8px;margin-top:4px">
-          ${!isFirst ? `<button onclick="Record.prev()" style="flex:1;background:var(--color-background-secondary);color:var(--color-text-secondary);border:none;border-radius:14px;padding:13px;font-size:14px;font-weight:500;font-family:inherit;cursor:pointer">← 이전</button>` : '<div style="flex:1"></div>'}
-          <button onclick="Record.next()" style="flex:2;background:linear-gradient(135deg,#3DCFC4,#B5E857);color:white;border:none;border-radius:14px;padding:13px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+          <button onclick="Record.next()" style="width:100%;background:linear-gradient(135deg,#3DCFC4,#B5E857);color:white;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer">
             ${isLast ? '마무리 →' : '다음 질문 →'}
           </button>
+          <div style="display:flex;gap:8px">
+            ${!isFirst ? `<button onclick="Record.prev()" style="flex:1;background:none;color:var(--color-text-secondary);border:1px solid #ddd;border-radius:12px;padding:10px;font-size:13px;font-family:inherit;cursor:pointer">← 이전</button>` : '<div style="flex:1"></div>'}
+            <button onclick="Record.skip()" style="flex:1;background:none;color:var(--color-text-secondary);border:1px solid #ddd;border-radius:12px;padding:10px;font-size:13px;font-family:inherit;cursor:pointer">건너뛰기</button>
+          </div>
         </div>
-        <button onclick="Record.next()" style="width:100%;background:none;border:none;color:var(--color-text-secondary);font-size:12px;padding:8px;font-family:inherit;cursor:pointer">
-          건너뛰기
-        </button>
       </div>`);
 
     hideFooter();
@@ -277,6 +276,7 @@ const Record = (() => {
     if (!files.length) return;
     const parseEl = document.getElementById('garmin-parse-status');
     if (parseEl) parseEl.style.display = 'block';
+    const statusEl = document.getElementById(`${type}-status`);
 
     for (const file of files) {
       await new Promise(resolve => {
@@ -285,27 +285,41 @@ const Record = (() => {
           const dataUrl = e.target.result;
           const base64 = dataUrl.split(',')[1];
           const mediaType = dataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
-          const statusEl = document.getElementById(`${type}-status`);
           if (statusEl) statusEl.textContent = `${file.name} 분석 중...`;
 
-          const result = await API.parseGarminImage(base64, type, mediaType);
-          if (result) {
-            const today = Store.today();
-            const existing = (await Store.Health.getByDate(today)) || {};
-            if (type==='sleep') Object.assign(existing, { sleep: result.sleepScore, sleepHours: result.totalSleep, deepSleep: result.deepSleep });
-            else if (type==='stress') existing.stress = result.stressScore;
-            else if (type==='run') Object.assign(existing, { pace: result.pace, heartRate: result.heartRate, calories: result.calories, duration: result.duration });
-            await Store.Health.save(today, existing);
-            healthData = existing;
-            if (statusEl) {
-              statusEl.textContent = type==='sleep'?`수면점수 ${result.sleepScore||'--'} 파싱완료`
-                :type==='stress'?`스트레스 ${result.stressScore||'--'} 파싱완료`
-                :`페이스 ${result.pace||'--'} 파싱완료`;
-              statusEl.style.color = '#2AADA3';
+          const today = Store.today();
+          const existing = (await Store.Health.getByDate(today)) || {};
+
+          if (type === 'health') {
+            const result = await API.parseGarminImageAuto(base64, mediaType);
+            if (result && result._requireManualInput) {
+              // API 키 없음 → 수동 입력 드로어
+              if (parseEl) parseEl.style.display = 'none';
+              openHealthManualInput(existing, today, statusEl);
+            } else if (result) {
+              if (result.sleepScore != null) Object.assign(existing, { sleep: result.sleepScore, sleepHours: result.totalSleep, deepSleep: result.deepSleep });
+              if (result.stressScore != null) existing.stress = result.stressScore;
+              await Store.Health.save(today, existing);
+              healthData = existing;
+              const parts = [];
+              if (result.sleepScore) parts.push(`수면 ${result.sleepScore}`);
+              if (result.stressScore) parts.push(`스트레스 ${result.stressScore}`);
+              if (statusEl) { statusEl.textContent = parts.length ? parts.join(' · ') + ' 파싱완료' : '수치를 찾지 못했어요'; statusEl.style.color = parts.length ? '#2AADA3' : '#D85A30'; }
+            } else {
+              openHealthManualInput(existing, today, statusEl);
             }
-          } else {
-            const statusEl = document.getElementById(`${type}-status`);
-            if (statusEl) { statusEl.textContent = 'API 키 확인 또는 다시 시도해주세요'; statusEl.style.color = '#D85A30'; }
+          } else if (type === 'run') {
+            const result = await API.parseGarminImageAuto(base64, mediaType, 'run');
+            if (result && result._requireManualInput) {
+              openRunManualInput(existing, today, statusEl);
+            } else if (result) {
+              Object.assign(existing, { pace: result.pace, heartRate: result.heartRate, calories: result.calories, duration: result.duration });
+              await Store.Health.save(today, existing);
+              healthData = existing;
+              if (statusEl) { statusEl.textContent = `페이스 ${result.pace||'--'} 파싱완료`; statusEl.style.color = '#2AADA3'; }
+            } else {
+              openRunManualInput(existing, today, statusEl);
+            }
           }
           resolve();
         };
@@ -313,6 +327,96 @@ const Record = (() => {
       });
     }
     if (parseEl) parseEl.style.display = 'none';
+  }
+
+
+  function openHealthManualInput(existing, today, statusEl) {
+    Drawer.open('건강 수치 직접 입력', `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:13px;color:var(--color-text-secondary);line-height:1.5">
+          가민 앱에서 확인한 수치를 직접 입력해주세요.
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">수면 점수 (0-100)</div>
+          <input id="manual-sleep" type="number" min="0" max="100" placeholder="예: 75" value="${existing.sleep||''}"
+            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">총 수면 시간</div>
+          <input id="manual-sleep-hours" type="text" placeholder="예: 6h 34m" value="${existing.sleepHours||''}"
+            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">스트레스 수치 (0-100)</div>
+          <input id="manual-stress" type="number" min="0" max="100" placeholder="예: 54" value="${existing.stress||''}"
+            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
+        </div>
+        <button class="btn-primary" onclick="Record.saveHealthManual('${today}')">저장하기</button>
+      </div>
+    `);
+    Record._healthStatusEl = statusEl;
+    Record._healthExisting = existing;
+    Record._healthToday = today;
+  }
+
+  function openRunManualInput(existing, today, statusEl) {
+    Drawer.open('러닝 데이터 직접 입력', `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:13px;color:var(--color-text-secondary)">가민 앱에서 확인한 수치를 직접 입력해주세요.</div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">평균 페이스 (분/km)</div>
+          <input id="manual-pace" type="text" placeholder="예: 5'38&quot;" value="${existing.pace||''}"
+            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">평균 심박수 (bpm)</div>
+          <input id="manual-hr" type="number" placeholder="예: 158" value="${existing.heartRate||''}"
+            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">칼로리 (kcal)</div>
+          <input id="manual-cal" type="number" placeholder="예: 412" value="${existing.calories||''}"
+            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
+        </div>
+        <button class="btn-primary" onclick="Record.saveRunManual('${today}')">저장하기</button>
+      </div>
+    `);
+    Record._runStatusEl = statusEl;
+    Record._runExisting = existing;
+    Record._runToday = today;
+  }
+
+  async function saveHealthManual(today) {
+    const sleep = parseInt(document.getElementById('manual-sleep')?.value) || null;
+    const sleepHours = document.getElementById('manual-sleep-hours')?.value || null;
+    const stress = parseInt(document.getElementById('manual-stress')?.value) || null;
+    const existing = Record._healthExisting || {};
+    if (sleep) existing.sleep = sleep;
+    if (sleepHours) existing.sleepHours = sleepHours;
+    if (stress) existing.stress = stress;
+    await Store.Health.save(today, existing);
+    healthData = existing;
+    const statusEl = Record._healthStatusEl;
+    const parts = [];
+    if (sleep) parts.push(`수면 ${sleep}`);
+    if (stress) parts.push(`스트레스 ${stress}`);
+    if (statusEl) { statusEl.textContent = parts.length ? parts.join(' · ') + ' 저장완료' : '저장완료'; statusEl.style.color = '#2AADA3'; }
+    Drawer.close();
+  }
+
+  async function saveRunManual(today) {
+    const pace = document.getElementById('manual-pace')?.value || null;
+    const hr = parseInt(document.getElementById('manual-hr')?.value) || null;
+    const cal = parseInt(document.getElementById('manual-cal')?.value) || null;
+    const existing = Record._runExisting || {};
+    if (pace) existing.pace = pace;
+    if (hr) existing.heartRate = hr;
+    if (cal) existing.calories = cal;
+    await Store.Health.save(today, existing);
+    healthData = existing;
+    const statusEl = Record._runStatusEl;
+    if (statusEl) { statusEl.textContent = `페이스 ${pace||'--'} 저장완료`; statusEl.style.color = '#2AADA3'; }
+    Drawer.close();
   }
 
   // ── STT ──
@@ -617,5 +721,6 @@ const Record = (() => {
   }
 
   return { init, next, prev, skip, goTo, finalize, reset, shareEntry, renderModeSelect,
-    toggleVoice, retry, confirmVoice, confirmFree, onTextInput, onFreeInput, onGarminSelect, startStep, startFree };
+    toggleVoice, retry, confirmVoice, confirmFree, onTextInput, onFreeInput, onGarminSelect, startStep, startFree,
+    saveHealthManual, saveRunManual };
 })();
