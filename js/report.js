@@ -9,7 +9,7 @@ const Report = (() => {
     render();
   }
 
-  async function render() {
+  async function render() { // fixed
     const body = document.getElementById('report-body');
     if (!body) return;
 
@@ -21,7 +21,7 @@ const Report = (() => {
       const weekStart = new Date(now);
       weekStart.setDate(now.getDate() - now.getDay() + 1);
       const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6);
-      const all = Store.Entries.getAll();
+      const all = await Store.Entries.getAll();
       entries = Object.values(all).filter(e => {
         const d = new Date(e.date);
         return d >= weekStart && d <= weekEnd;
@@ -34,7 +34,7 @@ const Report = (() => {
       periodLabel = `${now.getFullYear()}년 ${now.getMonth()+1}월`;
       document.getElementById('rpt-period').textContent = periodLabel;
     } else {
-      const all = Store.Entries.getAll();
+      const all = await Store.Entries.getAll();
       entries = Object.values(all).filter(e => e.date.startsWith(String(now.getFullYear())));
       document.getElementById('rpt-period').textContent = `${now.getFullYear()}년`;
     }
@@ -181,6 +181,7 @@ const Report = (() => {
 
     // 드로어 데이터 저장
     Report._lifeCards = lifeCards;
+    Report._period = period;
     Report._entries = entries;
     Report._report = report;
   }
@@ -226,5 +227,47 @@ const Report = (() => {
     `);
   }
 
-  return { render, setPeriod, openLifeDrawer };
+  return { render, setPeriod, openLifeDrawer, exportPDF, shareEmail };
 })();
+
+// ── PDF 저장 (브라우저 print 활용) ──
+function exportPDF() {
+  const body = document.getElementById('report-body');
+  if (!body) return;
+  const periodLabels = { weekly: '주간', monthly: '월간', yearly: '연간' };
+  const label = periodLabels[Report._period || 'weekly'];
+  const printWin = window.open('', '_blank');
+  printWin.document.write(`
+    <!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <title>나의 일기장 ${label} 리포트</title>
+    <style>
+      body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #222; }
+      h1 { color: #2AADA3; font-size: 20px; margin-bottom: 4px; }
+      .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+      .section { margin-bottom: 20px; }
+      .section-title { font-size: 12px; font-weight: 700; color: #888; letter-spacing: 0.05em; margin-bottom: 8px; }
+      .card { background: #f9f9f9; border-radius: 10px; padding: 14px; margin-bottom: 8px; }
+      .tag { background: #E1F5EE; color: #0F6E56; border-radius: 99px; padding: 3px 10px; font-size: 11px; margin: 2px; display: inline-block; }
+      @media print { body { padding: 0; } }
+    </style>
+    </head><body>
+    <h1>나의 일기장 ${label} 리포트</h1>
+    <div class="sub">${new Date().toLocaleDateString('ko-KR')} 기준</div>
+    ${body.innerHTML}
+    <script>window.onload=()=>{ window.print(); }<\/script>
+    </body></html>`);
+  printWin.document.close();
+}
+
+// ── 이메일로 보내기 ──
+function shareEmail() {
+  const body = document.getElementById('report-body');
+  if (!body) return;
+  const text = body.innerText.slice(0, 2000);
+  const periodLabels = { weekly: '주간', monthly: '월간', yearly: '연간' };
+  const label = periodLabels[Report._period || 'weekly'];
+  const subject = encodeURIComponent(`나의 일기장 ${label} 리포트 - ${new Date().toLocaleDateString('ko-KR')}`);
+  const body2 = encodeURIComponent(text);
+  window.location.href = `mailto:?subject=${subject}&body=${body2}`;
+}
