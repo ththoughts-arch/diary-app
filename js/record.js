@@ -7,17 +7,44 @@ const Record = (() => {
   let isRecording = false;
   let finalTranscript = '';
   let healthData = {};
+  let _initialized = false; // 화면 전환 후 재진입 시 초기화 방지
 
   async function init() {
+    // 이미 진행 중이면 현재 상태 유지
+    if (_initialized && answers.length > 0) {
+      renderCurrentState();
+      return;
+    }
     dailyQuestions = QuestionPool.getDailyQuestions();
     currentStep = 0;
     answers = dailyQuestions.map(q => ({ question: q.q, category: q.catId, catLabel: q.catLabel, answer: '' }));
     healthData = (await Store.Health.getByDate(Store.today())) || {};
+    _initialized = true;
     renderModeSelect();
+  }
+
+  // 현재 상태로 다시 렌더링 (화면 전환 후 복귀 시)
+  function renderCurrentState() {
+    if (currentStep === -1) {
+      renderModeSelect();
+    } else if (currentStep >= dailyQuestions.length) {
+      renderFinalStep();
+    } else {
+      renderStep();
+    }
+  }
+
+  function reset() {
+    _initialized = false;
+    currentStep = 0;
+    answers = [];
+    finalTranscript = '';
+    stopRecording();
   }
 
   // ── 모드 선택 ──
   function renderModeSelect() {
+    currentStep = -1; // 모드 선택 상태
     setStep('모드 선택', '0%');
     hideFooter();
 
@@ -47,7 +74,7 @@ const Record = (() => {
         </div>
         <div style="margin-top:14px">
           <div class="card">
-            <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:10px">📷 가민 스크린샷 업로드 (여러 장 동시 가능)</div>
+            <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:10px">📷 가민 스크린샷 업로드</div>
             <div style="display:flex;flex-direction:column;gap:8px">
               ${renderUploadLabel('sleep','💤','수면 분석')}
               ${renderUploadLabel('stress','🧠','스트레스')}
@@ -86,7 +113,9 @@ const Record = (() => {
 
   function renderStep() {
     const total = dailyQuestions.length;
-    setStep(`${currentStep+1} / ${total}`, `${Math.round((currentStep/total)*100)}%`);
+    if (currentStep < 0) currentStep = 0;
+
+    setStep(`${currentStep+1} / ${total}`, `${Math.round(((currentStep+1)/(total+1))*100)}%`);
 
     if (currentStep >= total) {
       renderFinalStep();
@@ -94,19 +123,16 @@ const Record = (() => {
     }
 
     const q = dailyQuestions[currentStep];
-    const prevAnswers = answers.slice(0, currentStep).filter(a => a.answer);
-    showFooter(currentStep === total-1 ? '마지막 단계 →' : '다음 질문 →');
+    const isFirst = currentStep === 0;
+    const isLast = currentStep === total - 1;
 
+    // 이전/다음 버튼 모두 표시
     setBody(`
       <div class="section">
-        ${prevAnswers.map(a=>`
-          <div style="margin-bottom:6px">
-            <div style="font-size:10px;font-weight:600;color:var(--color-text-secondary);margin-bottom:3px;padding-left:4px">${escapeHtml(a.catLabel||'')}</div>
-            <div class="answer-bubble">${escapeHtml(a.answer)}</div>
-          </div>`).join('')}
+        ${renderProgressDots()}
         <div class="card">
           <div class="q-bubble" style="background:linear-gradient(135deg,${q.catColor}CC,${q.catColor}88)">
-            <div class="q-label">${q.catLabel} · ${q.sub||''}</div>
+            <div class="q-label">${q.catLabel}</div>
             <div class="q-text">${escapeHtml(q.q)}</div>
           </div>
           ${renderVoiceZone()}
@@ -114,14 +140,50 @@ const Record = (() => {
           <textarea class="text-input-area" id="text-answer"
             placeholder="직접 타이핑해도 좋아요..."
             oninput="Record.onTextInput(this.value)">${escapeHtml(answers[currentStep]?.answer||'')}</textarea>
+          ${answers[currentStep]?.answer ? `
+            <div style="font-size:11px;color:#2AADA3;margin-top:6px;padding-left:2px">✓ 이 질문은 기록됐어요. 수정하려면 위 내용을 바꿔주세요.</div>` : ''}
         </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          ${!isFirst ? `<button onclick="Record.prev()" style="flex:1;background:var(--color-background-secondary);color:var(--color-text-secondary);border:none;border-radius:14px;padding:13px;font-size:14px;font-weight:500;font-family:inherit;cursor:pointer">← 이전</button>` : '<div style="flex:1"></div>'}
+          <button onclick="Record.next()" style="flex:2;background:linear-gradient(135deg,#3DCFC4,#B5E857);color:white;border:none;border-radius:14px;padding:13px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer">
+            ${isLast ? '마무리 →' : '다음 질문 →'}
+          </button>
+        </div>
+        <button onclick="Record.next()" style="width:100%;background:none;border:none;color:var(--color-text-secondary);font-size:12px;padding:8px;font-family:inherit;cursor:pointer">
+          건너뛰기
+        </button>
       </div>`);
+
+    hideFooter();
+  }
+
+  function renderProgressDots() {
+    const total = dailyQuestions.length;
+    const dots = dailyQuestions.map((q, i) => {
+      const isDone = !!answers[i]?.answer;
+      const isCurrent = i === currentStep;
+      const color = isDone ? '#3DCFC4' : isCurrent ? q.catColor : '#ddd';
+      return `<div onclick="Record.goTo(${i})" style="width:${isCurrent?'24px':'8px'};height:8px;border-radius:99px;background:${color};transition:all 0.2s;cursor:pointer;flex-shrink:0" title="${q.catLabel}"></div>`;
+    }).join('');
+    return `<div style="display:flex;align-items:center;gap:4px;padding:0 4px 8px;justify-content:center">${dots}</div>`;
+  }
+
+  function goTo(step) {
+    // 현재 답변 저장 후 해당 단계로 이동
+    const ta = document.getElementById('text-answer');
+    if (ta && currentStep >= 0 && currentStep < dailyQuestions.length) {
+      answers[currentStep].answer = ta.value.trim();
+    }
+    stopRecording();
+    currentStep = step;
+    renderStep();
   }
 
   // ── 한 번에 말하기 모드 ──
   function startFree() {
     setStep('자유 녹음', '50%');
     hideFooter();
+    currentStep = dailyQuestions.length; // 자유모드는 마지막으로 처리
 
     const qList = dailyQuestions.map(q=>
       `<div style="display:flex;gap:8px;align-items:flex-start;padding:9px 0;border-bottom:0.5px solid #f0f0f0">
@@ -131,14 +193,15 @@ const Record = (() => {
 
     setBody(`
       <div class="section">
-        <div class="card"><div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:8px">오늘의 질문들 — 자유롭게 답해주세요</div>${qList}</div>
+        <div class="card"><div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:8px">오늘의 질문들</div>${qList}</div>
         <div class="card">
           <div style="font-size:13px;font-weight:600;color:var(--color-text-primary);margin-bottom:4px">🎙 순서 상관없이 자유롭게 말씀해 주세요</div>
           <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:14px;line-height:1.5">AI가 카테고리별로 알아서 정리해드려요.</div>
           ${renderVoiceZone()}
           <div class="divider-or">또는</div>
-          <textarea class="text-input-area" id="text-answer" placeholder="자유롭게 오늘 하루를 써주세요..." style="height:120px" oninput="Record.onFreeInput(this.value)"></textarea>
+          <textarea class="text-input-area" id="text-answer" placeholder="자유롭게 오늘 하루를 써주세요..." style="height:120px" oninput="Record.onFreeInput(this.value)">${escapeHtml(answers[0]?.answer||'')}</textarea>
           <button class="btn-primary" style="margin-top:10px;width:100%" onclick="Record.confirmFree()">✨ AI로 일기 완성하기</button>
+          <button onclick="Record.renderModeSelect()" style="width:100%;background:none;border:none;color:var(--color-text-secondary);font-size:12px;padding:8px;font-family:inherit;cursor:pointer;margin-top:4px">← 모드 선택으로 돌아가기</button>
         </div>
       </div>`);
   }
@@ -146,11 +209,30 @@ const Record = (() => {
   // ── 마무리 단계 ──
   function renderFinalStep() {
     setStep('마무리', '90%');
-    // 푸터 숨기고 버튼은 body 안에 직접 넣음
     hideFooter();
+
+    const answeredCount = answers.filter(a=>a.answer).length;
 
     setBody(`
       <div class="section">
+        ${renderProgressDots()}
+        <div class="card" style="margin-bottom:8px">
+          <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:10px">
+            ${answeredCount}개 질문에 답하셨어요.
+            ${answeredCount < dailyQuestions.length ? `<span style="color:#D85A30">(${dailyQuestions.length-answeredCount}개 미답변)</span>` : '🎉 모두 완료!'}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+            ${dailyQuestions.map((q,i)=>`
+              <div onclick="Record.goTo(${i})" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--color-background-secondary);border-radius:10px;cursor:pointer">
+                <span style="font-size:13px">${answers[i]?.answer?'✅':'⬜'}</span>
+                <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:1px 7px;border-radius:99px">${q.catLabel}</span>
+                <span style="font-size:12px;color:${answers[i]?.answer?'var(--color-text-primary)':'var(--color-text-secondary)'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                  ${answers[i]?.answer ? escapeHtml(answers[i].answer.slice(0,30))+'...' : '탭해서 답변 추가'}
+                </span>
+                <span style="font-size:12px;color:#2AADA3">수정</span>
+              </div>`).join('')}
+          </div>
+        </div>
         <div class="card">
           <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:10px">추가 선택 항목</div>
           <div style="padding:8px 0;border-bottom:0.5px solid #f0f0f0">
@@ -193,7 +275,6 @@ const Record = (() => {
   async function onGarminSelect(input, type) {
     const files = Array.from(input.files);
     if (!files.length) return;
-
     const parseEl = document.getElementById('garmin-parse-status');
     if (parseEl) parseEl.style.display = 'block';
 
@@ -201,11 +282,13 @@ const Record = (() => {
       await new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = async (e) => {
-          const base64 = e.target.result.split(',')[1];
+          const dataUrl = e.target.result;
+          const base64 = dataUrl.split(',')[1];
+          const mediaType = dataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
           const statusEl = document.getElementById(`${type}-status`);
           if (statusEl) statusEl.textContent = `${file.name} 분석 중...`;
 
-          const result = await API.parseGarminImage(base64, type);
+          const result = await API.parseGarminImage(base64, type, mediaType);
           if (result) {
             const today = Store.today();
             const existing = (await Store.Health.getByDate(today)) || {};
@@ -222,7 +305,7 @@ const Record = (() => {
             }
           } else {
             const statusEl = document.getElementById(`${type}-status`);
-            if (statusEl) statusEl.textContent = '분석 실패 · 다시 시도해주세요';
+            if (statusEl) { statusEl.textContent = 'API 키 확인 또는 다시 시도해주세요'; statusEl.style.color = '#D85A30'; }
           }
           resolve();
         };
@@ -281,11 +364,9 @@ const Record = (() => {
       if (e.error==='no-speech') { if (isRecording) { try { recognition.start(); } catch(err){} } return; }
       stopRecording();
     };
-
     recognition.onend = () => {
       if (isRecording) { try { recognition.start(); } catch(err) { stopRecording(); } }
     };
-
     recognition.start();
   }
 
@@ -308,7 +389,7 @@ const Record = (() => {
       if (actions) actions.style.display = 'flex';
       const ta = document.getElementById('text-answer');
       if (ta) ta.value = text;
-      if (currentStep < dailyQuestions.length) answers[currentStep].answer = text;
+      if (currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = text;
     } else {
       if (label) { label.textContent = '💬 말하면 여기에 텍스트로 변환돼요'; label.style.color = 'var(--color-text-secondary)'; }
     }
@@ -328,7 +409,7 @@ const Record = (() => {
   function confirmVoice() {
     const ta = document.getElementById('text-answer');
     const text = ta?.value?.trim();
-    if (text && currentStep < dailyQuestions.length) answers[currentStep].answer = text;
+    if (text && currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = text;
     stopRecording();
     next();
   }
@@ -342,7 +423,7 @@ const Record = (() => {
   }
 
   function onTextInput(val) {
-    if (currentStep < dailyQuestions.length) answers[currentStep].answer = val;
+    if (currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = val;
   }
 
   function onFreeInput(val) {
@@ -352,14 +433,22 @@ const Record = (() => {
   function next() {
     stopRecording();
     const ta = document.getElementById('text-answer');
-    if (ta && currentStep < dailyQuestions.length) answers[currentStep].answer = ta.value.trim();
+    if (ta && currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = ta.value.trim();
     currentStep++;
+    renderStep();
+  }
+
+  function prev() {
+    stopRecording();
+    const ta = document.getElementById('text-answer');
+    if (ta && currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = ta.value.trim();
+    if (currentStep > 0) currentStep--;
+    else { renderModeSelect(); return; }
     renderStep();
   }
 
   function skip() {
     stopRecording();
-    if (currentStep < dailyQuestions.length) answers[currentStep].answer = '';
     currentStep++;
     renderStep();
   }
@@ -405,6 +494,9 @@ const Record = (() => {
     });
 
     await Store.Entries.save(today, { diary, tags, mood, summary, answers: validAnswers, categorized, health });
+
+    // 완성 후 초기화 (다음날 새로 시작)
+    _initialized = false;
 
     const catCards = Object.entries(categorized).map(([catId, items]) => {
       const cat = QuestionPool.getCategoryInfo(catId);
@@ -462,7 +554,7 @@ const Record = (() => {
         <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 0 8px">
           <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#3DCFC4,#B5E857);display:flex;align-items:center;justify-content:center;font-size:32px">✅</div>
           <div style="font-size:20px;font-weight:600;color:var(--color-text-primary);text-align:center">오늘 일기가 완성됐어요</div>
-          <div style="font-size:13px;color:var(--color-text-secondary);text-align:center;line-height:1.6">AI가 카테고리별로 오늘의 이야기를<br>정리했어요.</div>
+          <div style="font-size:13px;color:var(--color-text-secondary);text-align:center;line-height:1.6">AI가 카테고리별로 오늘의 이야기를 정리했어요.</div>
         </div>
         <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
           <div style="display:flex;align-items:center;gap:10px">
@@ -487,7 +579,7 @@ const Record = (() => {
         ${feedbackHtml}
         ${tagHtml}
         <button class="btn-primary" onclick="App.go('home')" style="width:100%;margin-top:4px">🏠 홈으로 돌아가기</button>
-        <button onclick="Record.shareEntry()" style="width:100%;background:var(--color-background-secondary);color:var(--color-text-secondary);border-radius:14px;padding:11px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;border:none;font-family:inherit">
+        <button onclick="Record.shareEntry()" style="width:100%;background:var(--color-background-secondary);color:var(--color-text-secondary);border-radius:14px;padding:11px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;border:none;font-family:inherit;cursor:pointer">
           📤 일기 공유 / 내보내기
         </button>
       </div>`;
@@ -524,5 +616,6 @@ const Record = (() => {
     if (footer) footer.style.display = 'none';
   }
 
-  return { init, next, skip, finalize, shareEntry, toggleVoice, retry, confirmVoice, confirmFree, onTextInput, onFreeInput, onGarminSelect, startStep, startFree };
+  return { init, next, prev, skip, goTo, finalize, reset, shareEntry, renderModeSelect,
+    toggleVoice, retry, confirmVoice, confirmFree, onTextInput, onFreeInput, onGarminSelect, startStep, startFree };
 })();
