@@ -8,360 +8,280 @@
   <title>나의 일기장</title>
   <link rel="stylesheet" href="css/style.css" />
   <link rel="manifest" href="manifest.json" />
-  <style>
-    #auth-screen {
-      position: fixed; inset: 0; z-index: 200;
-      background: linear-gradient(135deg, #3DCFC4 0%, #B5E857 100%);
-      display: flex; align-items: center; justify-content: center;
-    }
-    .auth-wrap {
-      background: white; border-radius: 24px;
-      padding: 32px 24px; width: 300px;
-      display: flex; flex-direction: column; gap: 12px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.15);
-    }
-    .auth-logo { font-size: 48px; text-align: center; }
-    .auth-title { font-size: 22px; font-weight: 700; color: #222; text-align: center; }
-    .auth-sub { font-size: 13px; color: #888; text-align: center; margin-top: -6px; }
-    .auth-tabs { display: grid; grid-template-columns: 1fr 1fr; background: #f5f5f5; border-radius: 10px; padding: 3px; gap: 3px; }
-    .auth-tab { padding: 8px; font-size: 13px; color: #888; border-radius: 8px; font-weight: 500; cursor: pointer; border: none; background: none; font-family: inherit; }
-    .auth-tab.active { background: white; color: #2AADA3; }
-    .auth-input { width: 100%; background: #f5f5f5; border: none; border-radius: 10px; padding: 12px 14px; font-size: 14px; outline: none; font-family: inherit; box-sizing: border-box; }
-    .auth-error { font-size: 12px; color: #E24B4A; min-height: 16px; text-align: center; }
-    .auth-btn { width: 100%; background: linear-gradient(135deg, #3DCFC4, #B5E857); color: white; border: none; border-radius: 12px; padding: 13px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; }
-  </style>
 </head>
 <body>
 
-  <div id="app" style="display:none">
+<div id="app" style="display:none">
 
-    <!-- 홈 -->
-    <div class="screen active" id="screen-home">
-      <div class="hero">
-        <div class="hero-top">
-          <div>
-            <div class="hero-greeting" id="home-greeting">좋은 아침이에요 ☀️</div>
-            <div class="hero-date" id="home-date"></div>
-          </div>
-          <div class="hero-avatar">나</div>
+  <!-- ══════════════════ 홈 ══════════════════ -->
+  <div class="screen active" id="screen-home">
+    <div class="hero">
+      <div class="hero-top">
+        <div>
+          <div class="hero-greeting" id="home-greeting">좋은 아침이에요 ☀️</div>
+          <div class="hero-date" id="home-date"></div>
         </div>
-        <div class="streak-row">
-          <span>🔥</span>
-          <span class="streak-text">연속 기록 중</span>
-          <span class="streak-num" id="home-streak">0일째</span>
-        </div>
-        <button class="btn-hero" onclick="App.go('record')">🎙 오늘 일기 시작하기</button>
+        <div class="hero-avatar">나</div>
       </div>
-      <div class="body-scroll">
-        <div class="section">
-          <div class="section-header">
-            <span class="section-label">오늘 할 일</span>
-            <span class="ai-badge">✨ AI 자동 추출</span>
-          </div>
-          <div class="card">
-            <ul class="todo-list" id="todo-list"></ul>
-            <div class="todo-add-row">
-              <input class="todo-input" id="todo-input" placeholder="할 일 직접 추가..." />
-              <button class="todo-add-btn" onclick="Todo.add()">+</button>
-            </div>
-          </div>
-        </div>
-        <div class="section">
-          <div class="section-label">오늘 날씨</div>
-          <div class="card">
-            <div class="weather-grid">
-              <div class="w-chip">
-                <div class="wc-label">오전</div>
-                <div class="wc-val" id="w-am">--°C</div>
-                <div class="wc-desc" id="w-am-desc">-</div>
-              </div>
-              <div class="w-chip">
-                <div class="wc-label">오후</div>
-                <div class="wc-val" id="w-pm">--°C</div>
-                <div class="wc-desc" id="w-pm-desc">-</div>
-              </div>
-            </div>
-            <div class="rain-alert" id="rain-alert" style="display:none">
-              ☂️ <span id="rain-msg"></span>
-            </div>
-          </div>
-        </div>
-        <div class="section">
-          <div class="section-label">오늘 건강 요약</div>
-          <div class="card">
-            <div class="health-grid">
-              <div class="h-chip">
-                <div class="hc-label">수면 점수</div>
-                <div class="hc-val sleep" id="h-sleep">--</div>
-                <div class="hc-sub" id="h-sleep-sub">--</div>
-              </div>
-              <div class="h-chip">
-                <div class="hc-label">스트레스</div>
-                <div class="hc-val stress" id="h-stress">--</div>
-                <div class="hc-sub" id="h-stress-sub">--</div>
-              </div>
-              <div class="h-chip">
-                <div class="hc-label">러닝 페이스</div>
-                <div class="hc-val run" id="h-run">--</div>
-                <div class="hc-sub" id="h-run-sub">--</div>
-              </div>
-              <div class="h-chip">
-                <div class="hc-label">칼로리</div>
-                <div class="hc-val kcal" id="h-kcal">--</div>
-                <div class="hc-sub">kcal</div>
-              </div>
-            </div>
-            <button class="garmin-hint" onclick="App.go('record')">
-              📷 가민 스크린샷 업로드 → AI 자동 추출 ›
-            </button>
-            <div class="ai-health-rec" id="ai-health-rec" style="display:none">
-              <div class="ahr-label">✨ AI 건강 추천</div>
-              <div class="ahr-text" id="ahr-text"></div>
-            </div>
-          </div>
-        </div>
-        <div class="section">
-          <div class="section-label">최근 기록</div>
-          <div class="card" id="recent-entries"></div>
-        </div>
-        <div class="section">
-          <div class="section-label">이번 주 키워드</div>
-          <div class="tag-wrap" id="home-tags"></div>
-        </div>
+      <div class="streak-row">
+        <span>🔥</span>
+        <span class="streak-text">연속 기록 중</span>
+        <span class="streak-num" id="home-streak">0일째</span>
       </div>
-      <nav class="nav-bar">
-        <button class="nav-item active" onclick="App.go('home')" aria-label="홈">🏠</button>
-        <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
-        <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
-        <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
-        <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
-      </nav>
+      <button class="btn-hero" onclick="App.go('record')">🎙 오늘 일기 시작하기</button>
     </div>
-
-    <!-- 기록 -->
-    <div class="screen" id="screen-record">
-      <div class="hero sub-header">
-        <div class="sub-header-row">
-          <button class="back-btn" onclick="App.go('home')">‹</button>
-          <span class="sub-title">오늘 일기 기록</span>
-          <span class="step-pill" id="rec-step">모드 선택</span>
+    <div class="body-scroll">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-label">오늘 할 일</span>
+          <span class="ai-badge">✨ AI 자동 추출</span>
         </div>
-        <div class="progress-bar"><div class="progress-fill" id="rec-progress"></div></div>
-      </div>
-      <div class="body-scroll" id="rec-body">
-        <div class="loading"><div class="spinner"></div> 불러오는 중...</div>
-      </div>
-      <div class="rec-footer" id="rec-footer" style="display:none">
-        <button class="btn-primary" id="rec-next-btn" onclick="Record.next()">다음 질문 →</button>
-        <button class="btn-skip" onclick="Record.skip()">이 질문 건너뛰기</button>
-      </div>
-      <nav class="nav-bar">
-        <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
-        <button class="nav-item active" aria-label="기록">🎙</button>
-        <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
-        <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
-        <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
-      </nav>
-    </div>
-
-    <!-- 리포트 -->
-    <div class="screen" id="screen-report">
-      <div class="hero">
-        <div class="rpt-top">
-          <div class="rpt-title">리포트</div>
-          <div class="rpt-sub" id="rpt-period"></div>
-        </div>
-        <div class="period-toggle">
-          <button class="pt-btn active" onclick="Report.setPeriod('weekly', this)">주간</button>
-          <button class="pt-btn" onclick="Report.setPeriod('monthly', this)">월간</button>
-          <button class="pt-btn" onclick="Report.setPeriod('yearly', this)">연간</button>
-        </div>
-      </div>
-      <div class="body-scroll" id="report-body"></div>
-      <nav class="nav-bar">
-        <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
-        <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
-        <button class="nav-item active" aria-label="리포트">📊</button>
-        <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
-        <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
-      </nav>
-    </div>
-
-    <!-- 캘린더 -->
-    <div class="screen" id="screen-calendar">
-      <div class="hero">
-        <div class="cal-nav-row">
-          <button class="cal-arrow" onclick="Calendar.prevMonth()">‹</button>
-          <div class="cal-month-title" id="cal-title"></div>
-          <button class="cal-arrow" onclick="Calendar.nextMonth()">›</button>
-        </div>
-        <div class="streak-row">
-          🔥 <span class="streak-text">이번 달 기록</span>
-          <span class="streak-num" id="cal-month-count">0일</span>
-        </div>
-        <div class="dow-row">
-          <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
-        </div>
-        <div class="cal-grid" id="cal-grid"></div>
-      </div>
-      <div class="body-scroll">
-        <div class="section">
-          <div class="section-label">이번 달 요약</div>
-          <div class="stat-row" id="cal-stats"></div>
-        </div>
-        <div class="section">
-          <div class="section-label">최근 일기</div>
-          <div class="card" id="cal-entry-list"></div>
-        </div>
-      </div>
-      <nav class="nav-bar">
-        <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
-        <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
-        <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
-        <button class="nav-item active" aria-label="캘린더">📅</button>
-        <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
-      </nav>
-    </div>
-
-    <!-- 설정 -->
-    <div class="screen" id="screen-settings">
-      <div class="hero">
-        <div class="set-profile">
-          <div class="hero-avatar">나</div>
-          <div>
-            <div class="set-name" id="set-username">내 일기장</div>
-            <div class="set-sub" id="set-streak-info"></div>
-          </div>
-          <button class="set-edit-btn" onclick="Settings.editProfile()">편집</button>
-        </div>
-      </div>
-      <div class="body-scroll">
-
-        <div class="section">
-          <div class="section-label">알람 설정</div>
-          <div class="card" id="alarm-list"></div>
-          <button class="add-row-btn" onclick="Settings.openAlarmDrawer()">+ 알람 추가하기</button>
-        </div>
-
-        <div class="section">
-          <div class="section-label">질문 설정</div>
-          <div class="card" id="question-list"></div>
-          <button class="add-row-btn" onclick="Settings.openQuestionDrawer()">+ 질문 추가하기</button>
-        </div>
-
-        <div class="section">
-          <div class="section-label">앱 설정</div>
-          <div class="card">
-            <div class="set-row">
-              <div class="set-icon" style="background:#E1F5EE">🌍</div>
-              <div class="set-text">
-                <div class="st-title">위치 기반 날씨</div>
-                <div class="st-sub" id="location-label">탭해서 위치 설정</div>
-              </div>
-              <div class="toggle" id="toggle-weather" onclick="Settings.toggleWeather()">
-                <div class="toggle-knob"></div>
-              </div>
-            </div>
-            <div class="set-row">
-              <div class="set-icon" style="background:#FAEEDA">🌙</div>
-              <div class="set-text">
-                <div class="st-title">다크 모드</div>
-              </div>
-              <div class="toggle" id="toggle-dark" onclick="Settings.toggleDark()">
-                <div class="toggle-knob"></div>
-              </div>
-            </div>
-            <div class="set-row" onclick="Settings.openFeedbackStyleDrawer()">
-              <div class="set-icon" style="background:#EEEDFE">🤖</div>
-              <div class="set-text">
-                <div class="st-title">AI 피드백 스타일</div>
-                <div class="st-sub" id="feedback-style-label">따뜻하고 공감적으로</div>
-              </div>
-              <span class="set-chevron">›</span>
-            </div>
-            <div class="set-row" onclick="Settings.openApiKeyDrawer()">
-              <div class="set-icon" style="background:#E1F5EE">🔑</div>
-              <div class="set-text">
-                <div class="st-title">Claude API 키</div>
-                <div class="st-sub" id="api-key-label">탭해서 키 입력</div>
-              </div>
-              <span class="set-chevron">›</span>
-            </div>
+        <div class="card">
+          <ul class="todo-list" id="todo-list"></ul>
+          <div class="todo-add-row">
+            <input class="todo-input" id="todo-input" placeholder="할 일 직접 추가..." />
+            <button class="todo-add-btn" onclick="Todo.add()">+</button>
           </div>
         </div>
-
-        <div class="section">
-          <div class="section-label">계정</div>
-          <div class="card">
-            <div class="set-row" onclick="FB.logout()">
-              <div class="set-icon" style="background:#FCEBEB">🚪</div>
-              <div class="set-text">
-                <div class="st-title" style="color:#A32D2D">로그아웃</div>
-              </div>
-              <span class="set-chevron">›</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-label">데이터</div>
-          <div class="card">
-            <div class="set-row" onclick="Settings.exportData()" style="cursor:pointer">
-              <div class="set-icon" style="background:#FAEEDA">📤</div>
-              <div class="set-text">
-                <div class="st-title">일기 내보내기</div>
-                
-              </div>
-              <span class="set-chevron">›</span>
-            </div>
-          </div>
-        </div>
-
       </div>
-      <nav class="nav-bar">
-        <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
-        <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
-        <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
-        <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
-        <button class="nav-item active" aria-label="설정">⚙️</button>
-      </nav>
+      <div class="section">
+        <div class="section-label">오늘 날씨</div>
+        <div class="card">
+          <div class="weather-grid">
+            <div class="w-chip"><div class="wc-label">오전</div><div class="wc-val" id="w-am">--°C</div><div class="wc-desc" id="w-am-desc">-</div></div>
+            <div class="w-chip"><div class="wc-label">오후</div><div class="wc-val" id="w-pm">--°C</div><div class="wc-desc" id="w-pm-desc">-</div></div>
+          </div>
+          <div class="rain-alert" id="rain-alert" style="display:none">☂️ <span id="rain-msg"></span></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">오늘 건강 요약</div>
+        <div class="card">
+          <div class="health-grid">
+            <div class="h-chip"><div class="hc-label">수면 점수</div><div class="hc-val sleep" id="h-sleep">--</div><div class="hc-sub" id="h-sleep-sub">--</div></div>
+            <div class="h-chip"><div class="hc-label">스트레스</div><div class="hc-val stress" id="h-stress">--</div><div class="hc-sub" id="h-stress-sub">--</div></div>
+            <div class="h-chip"><div class="hc-label">러닝 페이스</div><div class="hc-val run" id="h-run">--</div><div class="hc-sub" id="h-run-sub">--</div></div>
+            <div class="h-chip"><div class="hc-label">칼로리</div><div class="hc-val kcal" id="h-kcal">--</div><div class="hc-sub">kcal</div></div>
+          </div>
+          <button class="garmin-hint" onclick="App.go('record')">📷 가민 스크린샷 업로드 → AI 자동 추출 ›</button>
+          <div class="ai-health-rec" id="ai-health-rec" style="display:none">
+            <div class="ahr-label">✨ AI 건강 추천</div>
+            <div class="ahr-text" id="ahr-text"></div>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">최근 기록</div>
+        <div class="card" id="recent-entries"></div>
+      </div>
+      <div class="section">
+        <div class="section-label">이번 주 키워드</div>
+        <div class="tag-wrap" id="home-tags"></div>
+      </div>
     </div>
-
+    <nav class="nav-bar">
+      <button class="nav-item active" onclick="App.go('home')" aria-label="홈">🏠</button>
+      <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
+      <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
+      <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
+      <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
+    </nav>
   </div>
 
-  <!-- 드로어 -->
-  <div class="drawer-overlay" id="drawer-overlay" onclick="Drawer.close()">
-    <div class="drawer-panel" onclick="event.stopPropagation()">
-      <div class="drawer-handle"></div>
-      <div class="drawer-header">
-        <div class="drawer-title" id="drawer-title"></div>
-        <button class="drawer-close-btn" onclick="Drawer.close()">✕</button>
+  <!-- ══════════════════ 기록 ══════════════════ -->
+  <div class="screen" id="screen-record">
+    <div class="hero sub-header">
+      <div class="sub-header-row">
+        <button class="back-btn" onclick="App.go('home')">‹</button>
+        <span class="sub-title">오늘 일기 기록</span>
+        <span class="step-pill" id="rec-step">모드 선택</span>
       </div>
-      <div class="drawer-body" id="drawer-body"></div>
+      <div class="progress-bar"><div class="progress-fill" id="rec-progress"></div></div>
     </div>
+    <div class="body-scroll" id="rec-body">
+      <div class="loading"><div class="spinner"></div> 불러오는 중...</div>
+    </div>
+    <div class="rec-footer" id="rec-footer" style="display:none">
+      <button class="btn-primary" id="rec-next-btn" onclick="Record.next()">다음 질문 →</button>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
+      <button class="nav-item active" aria-label="기록">🎙</button>
+      <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
+      <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
+      <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
+    </nav>
   </div>
 
-  <!-- Firebase Compat SDK -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <!-- ══════════════════ 리포트 ══════════════════ -->
+  <div class="screen" id="screen-report">
+    <div class="hero">
+      <div class="rpt-title">리포트</div>
+      <div class="rpt-sub" id="rpt-period"></div>
+      <div class="period-toggle">
+        <button class="pt-btn active" onclick="Report.setPeriod('weekly',this)">주간</button>
+        <button class="pt-btn" onclick="Report.setPeriod('monthly',this)">월간</button>
+        <button class="pt-btn" onclick="Report.setPeriod('yearly',this)">연간</button>
+      </div>
+    </div>
+    <div class="body-scroll" id="report-body"></div>
+    <nav class="nav-bar">
+      <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
+      <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
+      <button class="nav-item active" aria-label="리포트">📊</button>
+      <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
+      <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
+    </nav>
+  </div>
 
-  <!-- 앱 JS -->
-  <script src="js/questions.js"></script>
-  <script src="js/firebase.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/api.js"></script>
-  <script src="js/app.js"></script>
-  <script src="js/todo.js"></script>
-  <script src="js/record.js"></script>
-  <script src="js/report.js"></script>
-  <script src="js/settings.js"></script>
-  <script src="js/weather.js"></script>
-  <script src="js/notifications.js"></script>
+  <!-- ══════════════════ 캘린더 ══════════════════ -->
+  <div class="screen" id="screen-calendar">
+    <div class="hero">
+      <div class="cal-nav-row">
+        <button class="cal-arrow" onclick="Calendar.prevMonth()">‹</button>
+        <div class="cal-month-title" id="cal-title"></div>
+        <button class="cal-arrow" onclick="Calendar.nextMonth()">›</button>
+      </div>
+      <div class="streak-row">
+        🔥 <span class="streak-text">이번 달 기록</span>
+        <span class="streak-num" id="cal-month-count">0일</span>
+      </div>
+      <div class="dow-row"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
+    <div class="body-scroll">
+      <div class="section">
+        <div class="section-label">이번 달 요약</div>
+        <div class="stat-row" id="cal-stats"></div>
+      </div>
+      <div class="section">
+        <div class="section-label">최근 일기</div>
+        <div class="card" id="cal-entry-list"></div>
+      </div>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
+      <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
+      <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
+      <button class="nav-item active" aria-label="캘린더">📅</button>
+      <button class="nav-item" onclick="App.go('settings')" aria-label="설정">⚙️</button>
+    </nav>
+  </div>
 
-  <script>
-    initFirebase();
-  </script>
+  <!-- ══════════════════ 설정 ══════════════════ -->
+  <div class="screen" id="screen-settings">
+    <div class="hero">
+      <div class="set-profile">
+        <div class="hero-avatar">나</div>
+        <div>
+          <div class="set-name" id="set-username">내 일기장</div>
+          <div class="set-sub" id="set-streak-info"></div>
+        </div>
+        <button class="set-edit-btn" onclick="Settings.editProfile()">편집</button>
+      </div>
+    </div>
+    <div class="body-scroll">
+      <div class="section">
+        <div class="section-label">알람 설정</div>
+        <div class="card" id="alarm-list"></div>
+        <button class="add-row-btn" onclick="Settings.openAlarmDrawer()">+ 알람 추가하기</button>
+      </div>
+      <div class="section">
+        <div class="section-label">질문 설정</div>
+        <div class="card" id="question-list"></div>
+        <button class="add-row-btn" onclick="Settings.openQuestionDrawer()">+ 질문 추가하기</button>
+      </div>
+      <div class="section">
+        <div class="section-label">앱 설정</div>
+        <div class="card">
+          <div class="set-row" onclick="Settings.toggleWeather()">
+            <div class="set-icon" style="background:#E1F5EE">🌍</div>
+            <div class="set-text"><div class="st-title">위치 기반 날씨</div><div class="st-sub" id="location-label">탭해서 위치 설정</div></div>
+            <div class="toggle" id="toggle-weather"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="set-row" onclick="Settings.toggleDark()">
+            <div class="set-icon" style="background:#FAEEDA">🌙</div>
+            <div class="set-text"><div class="st-title">다크 모드</div></div>
+            <div class="toggle" id="toggle-dark"><div class="toggle-knob"></div></div>
+          </div>
+          <div class="set-row" onclick="Settings.openFeedbackDrawer()">
+            <div class="set-icon" style="background:#EEEDFE">🤖</div>
+            <div class="set-text"><div class="st-title">AI 피드백 스타일</div><div class="st-sub" id="feedback-style-label">따뜻하고 공감적으로</div></div>
+            <span class="set-chevron">›</span>
+          </div>
+          <div class="set-row" onclick="Settings.openApiKeyDrawer()">
+            <div class="set-icon" style="background:#E1F5EE">🔑</div>
+            <div class="set-text"><div class="st-title">Claude API 키</div><div class="st-sub" id="api-key-label">탭해서 키 입력</div></div>
+            <span class="set-chevron">›</span>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">계정</div>
+        <div class="card">
+          <div class="set-row" onclick="FB.logout()">
+            <div class="set-icon" style="background:#FCEBEB">🚪</div>
+            <div class="set-text"><div class="st-title" style="color:#A32D2D">로그아웃</div></div>
+            <span class="set-chevron">›</span>
+          </div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-label">데이터</div>
+        <div class="card">
+          <div class="set-row" onclick="Settings.openExportDrawer()">
+            <div class="set-icon" style="background:#FAEEDA">📤</div>
+            <div class="set-text"><div class="st-title">일기 내보내기</div></div>
+            <span class="set-chevron">›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <nav class="nav-bar">
+      <button class="nav-item" onclick="App.go('home')" aria-label="홈">🏠</button>
+      <button class="nav-item" onclick="App.go('record')" aria-label="기록">🎙</button>
+      <button class="nav-item" onclick="App.go('report')" aria-label="리포트">📊</button>
+      <button class="nav-item" onclick="App.go('calendar')" aria-label="캘린더">📅</button>
+      <button class="nav-item active" aria-label="설정">⚙️</button>
+    </nav>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- ══════════════════ 드로어 ══════════════════ -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="Drawer.close()">
+  <div class="drawer-panel" onclick="event.stopPropagation()">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+      <div class="drawer-title" id="drawer-title"></div>
+      <button class="drawer-close-btn" onclick="Drawer.close()">✕</button>
+    </div>
+    <div class="drawer-body" id="drawer-body"></div>
+  </div>
+</div>
+
+<!-- Firebase Compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<!-- 앱 스크립트 (의존성 순서 중요) -->
+<script src="js/firebase.js"></script>
+<script src="js/questions.js"></script>
+<script src="js/store.js"></script>
+<script src="js/api.js"></script>
+<script src="js/weather.js"></script>
+<script src="js/notifications.js"></script>
+<script src="js/app.js"></script>
+<script src="js/record.js"></script>
+<script src="js/report.js"></script>
+<script src="js/settings.js"></script>
+
+<script>
+  // API.setKey 별칭 (firebase.js에서 호출)
+  const _origSetKey = API.setKey;
+  initFirebase();
+</script>
 
 </body>
 </html>

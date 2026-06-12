@@ -1,726 +1,530 @@
-/* ── record.js ── */
+/* ====================================================
+   record.js — 일기 기록 화면
+   ==================================================== */
 const Record = (() => {
-  let dailyQuestions = [];
-  let currentStep = 0;
-  let answers = [];
-  let recognition = null;
-  let isRecording = false;
-  let finalTranscript = '';
-  let healthData = {};
-  let _initialized = false; // 화면 전환 후 재진입 시 초기화 방지
 
+  /* ── 상태 ── */
+  let questions = [];
+  let answers   = [];         // [{ question, category, catLabel, answer }]
+  let step      = -1;         // -1: 모드선택, 0~N-1: 질문, N: 마무리
+  let health    = {};
+  let active    = false;      // 세션 진행 중 (화면 복귀 시 유지)
+  let recog     = null;
+  let recoding  = false;
+  let sttText   = '';
+
+  /* ── DOM 헬퍼 ── */
+  const body    = () => $('rec-body');
+  const footer  = () => $('rec-footer');
+  const setStep = (txt, pct) => {
+    if ($('rec-step'))    $('rec-step').textContent = txt;
+    if ($('rec-progress')) $('rec-progress').style.width = pct;
+  };
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     초기화
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function init() {
-    // 이미 진행 중이면 현재 상태 유지
-    if (_initialized && answers.length > 0) {
-      renderCurrentState();
-      return;
-    }
-    dailyQuestions = QuestionPool.getDailyQuestions();
-    currentStep = 0;
-    answers = dailyQuestions.map(q => ({ question: q.q, category: q.catId, catLabel: q.catLabel, answer: '' }));
-    healthData = (await Store.Health.getByDate(Store.today())) || {};
-    _initialized = true;
-    renderModeSelect();
+    if (active) { _render(); return; }           // 화면 복귀 시 상태 유지
+    questions = QuestionPool.getDailyQuestions();
+    answers   = questions.map(q => ({ question:q.q, category:q.catId, catLabel:q.catLabel, answer:'' }));
+    health    = (await Store.Health.getByDate(Store.today())) || {};
+    step      = -1;
+    active    = true;
+    _render();
   }
 
-  // 현재 상태로 다시 렌더링 (화면 전환 후 복귀 시)
-  function renderCurrentState() {
-    if (currentStep === -1) {
-      renderModeSelect();
-    } else if (currentStep >= dailyQuestions.length) {
-      renderFinalStep();
-    } else {
-      renderStep();
-    }
+  function _render() {
+    footer().style.display = 'none';
+    if      (step <  0)                _renderMode();
+    else if (step <  questions.length) _renderStep();
+    else                               _renderFinal();
   }
 
-  function reset() {
-    _initialized = false;
-    currentStep = 0;
-    answers = [];
-    finalTranscript = '';
-    stopRecording();
-  }
+  function _reset() { active=false; step=-1; sttText=''; _stopSTT(); }
 
-  // ── 모드 선택 ──
-  function renderModeSelect() {
-    currentStep = -1; // 모드 선택 상태
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     1. 모드 선택
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  function _renderMode() {
     setStep('모드 선택', '0%');
-    hideFooter();
-
-    const qPreview = dailyQuestions.map(q =>
-      `<div style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:0.5px solid #f0f0f0">
-        <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:2px 7px;border-radius:99px;flex-shrink:0;margin-top:2px">${q.catLabel}</span>
-        <span style="font-size:12px;color:var(--color-text-secondary);line-height:1.5">${escapeHtml(q.q)}</span>
+    const preview = questions.map(q=>`
+      <div style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:.5px solid #f0f0f0">
+        <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:2px 7px;border-radius:99px;flex-shrink:0">${q.catLabel}</span>
+        <span style="font-size:12px;color:#888;line-height:1.5">${esc(q.q)}</span>
       </div>`).join('');
 
-    setBody(`
+    body().innerHTML = `
       <div class="section" style="margin-top:8px">
         <div class="card" style="margin-bottom:10px">
-          <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:8px">오늘의 질문 미리보기</div>
-          ${qPreview}
+          <div class="drawer-label">오늘의 질문 미리보기</div>
+          ${preview}
         </div>
         <div style="display:flex;flex-direction:column;gap:10px">
-          <button onclick="Record.startStep()" style="background:var(--color-background-primary);border-radius:16px;padding:18px 16px;text-align:left;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.07);border:none;font-family:inherit;width:100%">
-            <div style="font-size:20px;margin-bottom:6px">💬</div>
-            <div style="font-size:15px;font-weight:700;color:var(--color-text-primary);margin-bottom:3px">질문형 대화</div>
-            <div style="font-size:12px;color:var(--color-text-secondary);line-height:1.5">카테고리별로 하나씩 질문하고 순서대로 음성으로 답하는 방식</div>
+          <button class="mode-choice" onclick="Record.startStep()">
+            <div class="mode-choice-icon">💬</div>
+            <div class="mode-choice-title">질문형 대화</div>
+            <div class="mode-choice-desc">카테고리별로 하나씩 질문하고 순서대로 음성으로 답하는 방식</div>
           </button>
-          <button onclick="Record.startFree()" style="background:var(--color-background-primary);border-radius:16px;padding:18px 16px;text-align:left;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.07);border:none;font-family:inherit;width:100%">
-            <div style="font-size:20px;margin-bottom:6px">🎙</div>
-            <div style="font-size:15px;font-weight:700;color:var(--color-text-primary);margin-bottom:3px">한 번에 말하기</div>
-            <div style="font-size:12px;color:var(--color-text-secondary);line-height:1.5">모든 질문이 한눈에 보이고 자유롭게 한 번에 녹음하는 방식</div>
+          <button class="mode-choice" onclick="Record.startFree()">
+            <div class="mode-choice-icon">🎙</div>
+            <div class="mode-choice-title">한 번에 말하기</div>
+            <div class="mode-choice-desc">모든 질문이 한눈에 보이고 자유롭게 한 번에 녹음하는 방식</div>
           </button>
         </div>
-        <div style="margin-top:14px">
-          <div class="card">
-            <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:10px">📷 가민 스크린샷 업로드</div>
-            <div style="display:flex;flex-direction:column;gap:8px">
-              ${renderUploadLabel('health','❤️‍🩹','건강 분석 (수면+스트레스)')}
-              ${renderUploadLabel('run','🏃','러닝 활동 (달린 경우만)')}
-            </div>
-            <div id="garmin-parse-status" style="display:none;margin-top:10px">
-              <div class="loading"><div class="spinner"></div> AI가 이미지 분석 중...</div>
-            </div>
-          </div>
-        </div>
-      </div>`);
+        <div style="margin-top:14px">${_garminSection()}</div>
+      </div>`;
   }
 
-  function renderUploadLabel(type, icon, label) {
-    const h = healthData;
-    const isDone = type==='health'?(!!h.sleep||!!h.stress):type==='run'?!!h.pace:false;
-    const statusText = type==='health'
-      ? (h.sleep||h.stress ? `수면점수 ${h.sleep||'--'} · 스트레스 ${h.stress||'--'} 파싱완료` : '수면·스트레스 스크린샷 선택')
-      : (h.pace?`페이스 ${h.pace} 파싱완료`:'탭해서 이미지 선택');
-    return `<label style="display:flex;align-items:center;gap:10px;background:var(--color-background-secondary);border-radius:10px;padding:11px 13px;cursor:pointer">
+  /* ── 가민 업로드 ── */
+  function _garminSection() {
+    return `<div class="card">
+      <div class="drawer-label">📷 가민 스크린샷 업로드</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${_uploadLabel('health','❤️‍🩹','건강 분석 (수면+스트레스)', health.sleep||health.stress ? `수면${health.sleep||'--'} · 스트레스${health.stress||'--'} 완료` : '')}
+        ${_uploadLabel('run',  '🏃',  '러닝 활동', health.pace ? `페이스 ${health.pace} 완료` : '')}
+      </div>
+      <div id="garmin-loading" style="display:none;margin-top:8px"><div class="loading"><div class="spinner"></div> 이미지 분석 중...</div></div>
+    </div>`;
+  }
+
+  function _uploadLabel(type, icon, label, done='') {
+    return `<label class="upload-label">
       <span style="font-size:18px">${icon}</span>
       <div style="flex:1">
-        <div style="font-size:13px;font-weight:500;color:var(--color-text-primary)">${label}</div>
-        <div style="font-size:11px;color:${isDone?'#2AADA3':'var(--color-text-secondary)'}" id="${type}-status">${statusText}</div>
+        <div class="ul-title">${label}</div>
+        <div class="ul-status${done?' done':''}" id="${type}-status">${done||'탭해서 이미지 선택'}</div>
       </div>
-      <span style="color:${isDone?'#2AADA3':'var(--color-text-secondary)'}">${isDone?'✓':'+'}</span>
-      <input type="file" accept="image/*" multiple style="display:none" onchange="Record.onGarminSelect(this,'${type}')">
+      <span style="color:${done?'#2AADA3':'#ccc'}">${done?'✓':'+'}</span>
+      <input type="file" accept="image/*" multiple style="display:none" onchange="Record.onGarmin(this,'${type}')">
     </label>`;
   }
 
-  // ── 질문형 모드 ──
-  function startStep() {
-    currentStep = 0;
-    renderStep();
+  async function onGarmin(input, type) {
+    const files = Array.from(input.files);
+    if (!files.length) return;
+    const loading  = $('garmin-loading');
+    const statusEl = $(`${type}-status`);
+    if (loading) loading.style.display = 'block';
+
+    for (const file of files) {
+      if (statusEl) statusEl.textContent = `${file.name} 분석 중...`;
+      const { b64, mime } = await _readFile(file);
+      const today = Store.today();
+      const existing = (await Store.Health.getByDate(today)) || {};
+
+      if (API.hasKey()) {
+        const result = await API.parseGarmin(b64, mime, type);
+        if (result) {
+          _mergeHealth(existing, type, result);
+          await Store.Health.save(today, existing);
+          health = existing;
+          if (statusEl) { statusEl.textContent = _healthText(type,existing); statusEl.className='ul-status done'; }
+        } else {
+          _openManual(type, existing, today, statusEl);
+        }
+      } else {
+        _openManual(type, existing, today, statusEl);
+      }
+    }
+    if (loading) loading.style.display = 'none';
   }
 
-  function renderStep() {
-    const total = dailyQuestions.length;
-    if (currentStep < 0) currentStep = 0;
+  const _readFile = file => new Promise(res => {
+    const r = new FileReader();
+    r.onload = e => { const d=e.target.result; res({ b64:d.split(',')[1], mime:d.split(';')[0].split(':')[1]||'image/jpeg' }); };
+    r.readAsDataURL(file);
+  });
 
-    setStep(`${currentStep+1} / ${total}`, `${Math.round(((currentStep+1)/(total+1))*100)}%`);
-
-    if (currentStep >= total) {
-      renderFinalStep();
-      return;
+  function _mergeHealth(e, type, r) {
+    if (type==='health') {
+      if (r.sleepScore!=null) Object.assign(e,{sleep:r.sleepScore,sleepHours:r.totalSleep,deepSleep:r.deepSleep});
+      if (r.stressScore!=null) e.stress=r.stressScore;
+    } else {
+      Object.assign(e,{pace:r.pace,heartRate:r.heartRate,calories:r.calories,duration:r.duration});
     }
+  }
 
-    const q = dailyQuestions[currentStep];
-    const isFirst = currentStep === 0;
-    const isLast = currentStep === total - 1;
+  const _healthText = (type,h) => type==='health'
+    ? `수면 ${h.sleep||'--'} · 스트레스 ${h.stress||'--'} 완료`
+    : `페이스 ${h.pace||'--'} 완료`;
 
-    // 이전/다음 버튼 모두 표시
-    setBody(`
+  // API 키 없을 때 수동 입력
+  function _openManual(type, existing, today, statusEl) {
+    Record._mCtx = { existing, today, statusEl, type };
+    if (type==='health') {
+      Drawer.open('건강 수치 직접 입력', `
+        <div class="drawer-label">수면 점수 (0-100)</div>
+        <input class="label-input" id="m-sleep" type="number" min="0" max="100" placeholder="예: 75" value="${existing.sleep||''}">
+        <div class="drawer-label">총 수면 시간</div>
+        <input class="label-input" id="m-sleep-h" type="text" placeholder="예: 6h 34m" value="${existing.sleepHours||''}">
+        <div class="drawer-label">스트레스 수치 (0-100)</div>
+        <input class="label-input" id="m-stress" type="number" min="0" max="100" placeholder="예: 54" value="${existing.stress||''}">
+        <button class="btn-primary" onclick="Record.saveManual()">저장하기</button>`);
+    } else {
+      Drawer.open('러닝 데이터 직접 입력', `
+        <div class="drawer-label">평균 페이스 (분/km)</div>
+        <input class="label-input" id="m-pace" type="text" placeholder="예: 5'38&quot;" value="${existing.pace||''}">
+        <div class="drawer-label">평균 심박수 (bpm)</div>
+        <input class="label-input" id="m-hr" type="number" placeholder="예: 158" value="${existing.heartRate||''}">
+        <div class="drawer-label">칼로리 (kcal)</div>
+        <input class="label-input" id="m-cal" type="number" placeholder="예: 412" value="${existing.calories||''}">
+        <button class="btn-primary" onclick="Record.saveManual()">저장하기</button>`);
+    }
+  }
+
+  async function saveManual() {
+    const ctx = Record._mCtx; if (!ctx) return;
+    const e = ctx.existing;
+    if (ctx.type==='health') {
+      const sleep=parseInt($('m-sleep')?.value)||null, sh=$('m-sleep-h')?.value||null, stress=parseInt($('m-stress')?.value)||null;
+      if (sleep) e.sleep=sleep; if (sh) e.sleepHours=sh; if (stress) e.stress=stress;
+    } else {
+      const pace=$('m-pace')?.value||null, hr=parseInt($('m-hr')?.value)||null, cal=parseInt($('m-cal')?.value)||null;
+      if (pace) e.pace=pace; if (hr) e.heartRate=hr; if (cal) e.calories=cal;
+    }
+    await Store.Health.save(ctx.today, e);
+    health = e;
+    if (ctx.statusEl) { ctx.statusEl.textContent=_healthText(ctx.type,e); ctx.statusEl.className='ul-status done'; }
+    Drawer.close();
+  }
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     2. 질문형 모드
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  function startStep() { step=0; _renderStep(); }
+
+  function _renderStep() {
+    const total = questions.length;
+    setStep(`${step+1} / ${total}`, `${Math.round(((step+1)/(total+1))*100)}%`);
+    if (step >= total) { _renderFinal(); return; }
+
+    const q = questions[step];
+    body().innerHTML = `
       <div class="section">
-        ${renderProgressDots()}
+        ${_dots()}
         <div class="card">
           <div class="q-bubble" style="background:linear-gradient(135deg,${q.catColor}CC,${q.catColor}88)">
             <div class="q-label">${q.catLabel}</div>
-            <div class="q-text">${escapeHtml(q.q)}</div>
+            <div class="q-text">${esc(q.q)}</div>
           </div>
-          ${renderVoiceZone()}
+          ${_voiceHTML()}
           <div class="divider-or">또는</div>
-          <textarea class="text-input-area" id="text-answer"
-            placeholder="직접 타이핑해도 좋아요..."
-            oninput="Record.onTextInput(this.value)">${escapeHtml(answers[currentStep]?.answer||'')}</textarea>
-          ${answers[currentStep]?.answer ? `
-            <div style="font-size:11px;color:#2AADA3;margin-top:6px;padding-left:2px">✓ 이 질문은 기록됐어요. 수정하려면 위 내용을 바꿔주세요.</div>` : ''}
+          <textarea class="text-input-area" id="text-answer" placeholder="직접 타이핑해도 좋아요..."
+            oninput="Record.onType(this.value)">${esc(answers[step]?.answer||'')}</textarea>
+          ${answers[step]?.answer?`<div style="font-size:11px;color:#2AADA3;margin-top:6px">✓ 기록됨 · 수정하려면 위 내용을 바꿔주세요</div>`:''}
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
-          <button onclick="Record.next()" style="width:100%;background:linear-gradient(135deg,#3DCFC4,#B5E857);color:white;border:none;border-radius:14px;padding:14px;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer">
-            ${isLast ? '마무리 →' : '다음 질문 →'}
+          <button class="btn-primary" onclick="Record.next()">
+            ${step===questions.length-1 ? '마무리 →' : '다음 질문 →'}
           </button>
           <div style="display:flex;gap:8px">
-            ${!isFirst ? `<button onclick="Record.prev()" style="flex:1;background:none;color:var(--color-text-secondary);border:1px solid #ddd;border-radius:12px;padding:10px;font-size:13px;font-family:inherit;cursor:pointer">← 이전</button>` : '<div style="flex:1"></div>'}
-            <button onclick="Record.skip()" style="flex:1;background:none;color:var(--color-text-secondary);border:1px solid #ddd;border-radius:12px;padding:10px;font-size:13px;font-family:inherit;cursor:pointer">건너뛰기</button>
+            ${step>0?`<button class="btn-secondary" style="flex:1" onclick="Record.prev()">← 이전</button>`:'<div style="flex:1"></div>'}
+            <button class="btn-secondary" style="flex:1" onclick="Record.skip()">건너뛰기</button>
           </div>
         </div>
-      </div>`);
-
-    hideFooter();
+      </div>`;
   }
 
-  function renderProgressDots() {
-    const total = dailyQuestions.length;
-    const dots = dailyQuestions.map((q, i) => {
-      const isDone = !!answers[i]?.answer;
-      const isCurrent = i === currentStep;
-      const color = isDone ? '#3DCFC4' : isCurrent ? q.catColor : '#ddd';
-      return `<div onclick="Record.goTo(${i})" style="width:${isCurrent?'24px':'8px'};height:8px;border-radius:99px;background:${color};transition:all 0.2s;cursor:pointer;flex-shrink:0" title="${q.catLabel}"></div>`;
-    }).join('');
-    return `<div style="display:flex;align-items:center;gap:4px;padding:0 4px 8px;justify-content:center">${dots}</div>`;
-  }
-
-  function goTo(step) {
-    // 현재 답변 저장 후 해당 단계로 이동
-    const ta = document.getElementById('text-answer');
-    if (ta && currentStep >= 0 && currentStep < dailyQuestions.length) {
-      answers[currentStep].answer = ta.value.trim();
-    }
-    stopRecording();
-    currentStep = step;
-    renderStep();
-  }
-
-  // ── 한 번에 말하기 모드 ──
-  function startFree() {
-    setStep('자유 녹음', '50%');
-    hideFooter();
-    currentStep = dailyQuestions.length; // 자유모드는 마지막으로 처리
-
-    const qList = dailyQuestions.map(q=>
-      `<div style="display:flex;gap:8px;align-items:flex-start;padding:9px 0;border-bottom:0.5px solid #f0f0f0">
-        <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:2px 8px;border-radius:99px;flex-shrink:0;margin-top:1px">${q.catLabel}</span>
-        <span style="font-size:13px;color:var(--color-text-primary);line-height:1.5">${escapeHtml(q.q)}</span>
-      </div>`).join('');
-
-    setBody(`
-      <div class="section">
-        <div class="card"><div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:8px">오늘의 질문들</div>${qList}</div>
-        <div class="card">
-          <div style="font-size:13px;font-weight:600;color:var(--color-text-primary);margin-bottom:4px">🎙 순서 상관없이 자유롭게 말씀해 주세요</div>
-          <div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:14px;line-height:1.5">AI가 카테고리별로 알아서 정리해드려요.</div>
-          ${renderVoiceZone()}
-          <div class="divider-or">또는</div>
-          <textarea class="text-input-area" id="text-answer" placeholder="자유롭게 오늘 하루를 써주세요..." style="height:120px" oninput="Record.onFreeInput(this.value)">${escapeHtml(answers[0]?.answer||'')}</textarea>
-          <button class="btn-primary" style="margin-top:10px;width:100%" onclick="Record.confirmFree()">✨ AI로 일기 완성하기</button>
-          <button onclick="Record.renderModeSelect()" style="width:100%;background:none;border:none;color:var(--color-text-secondary);font-size:12px;padding:8px;font-family:inherit;cursor:pointer;margin-top:4px">← 모드 선택으로 돌아가기</button>
-        </div>
-      </div>`);
-  }
-
-  // ── 마무리 단계 ──
-  function renderFinalStep() {
-    setStep('마무리', '90%');
-    hideFooter();
-
-    const answeredCount = answers.filter(a=>a.answer).length;
-
-    setBody(`
-      <div class="section">
-        ${renderProgressDots()}
-        <div class="card" style="margin-bottom:8px">
-          <div style="font-size:13px;color:var(--color-text-secondary);margin-bottom:10px">
-            ${answeredCount}개 질문에 답하셨어요.
-            ${answeredCount < dailyQuestions.length ? `<span style="color:#D85A30">(${dailyQuestions.length-answeredCount}개 미답변)</span>` : '🎉 모두 완료!'}
-          </div>
-          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
-            ${dailyQuestions.map((q,i)=>`
-              <div onclick="Record.goTo(${i})" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--color-background-secondary);border-radius:10px;cursor:pointer">
-                <span style="font-size:13px">${answers[i]?.answer?'✅':'⬜'}</span>
-                <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:1px 7px;border-radius:99px">${q.catLabel}</span>
-                <span style="font-size:12px;color:${answers[i]?.answer?'var(--color-text-primary)':'var(--color-text-secondary)'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  ${answers[i]?.answer ? escapeHtml(answers[i].answer.slice(0,30))+'...' : '탭해서 답변 추가'}
-                </span>
-                <span style="font-size:12px;color:#2AADA3">수정</span>
-              </div>`).join('')}
-          </div>
-        </div>
-        <div class="card">
-          <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);margin-bottom:10px">추가 선택 항목</div>
-          <div style="padding:8px 0;border-bottom:0.5px solid #f0f0f0">
-            <div style="font-size:13px;color:var(--color-text-primary);margin-bottom:6px">아이와 함께한 시간</div>
-            <select id="child-time" style="font-size:13px;background:var(--color-background-secondary);border:none;border-radius:8px;padding:8px 12px;width:100%;outline:none;color:var(--color-text-primary)">
-              <option value="">선택 안 함</option>
-              <option>거의 없음</option>
-              <option>1시간</option>
-              <option>2시간 이상</option>
-            </select>
-          </div>
-          <div style="padding:8px 0">
-            <div style="font-size:13px;color:var(--color-text-primary);margin-bottom:6px">✨ 하고 싶은 말 (자유 메모)</div>
-            <textarea class="text-input-area" id="free-note" placeholder="오늘 하루 추가로 남기고 싶은 말..." style="height:70px"></textarea>
-          </div>
-        </div>
-        <button class="btn-primary" style="width:100%;margin-top:4px" onclick="Record.finalize()">✨ AI로 일기 완성하기</button>
-      </div>`);
-  }
-
-  function renderVoiceZone() {
-    return `<div class="voice-zone">
-      <div class="voice-top" id="voice-top" onclick="Record.toggleVoice()">
-        <div class="voice-ring" id="voice-ring">🎙</div>
-        <div class="waveform" id="waveform"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-        <div class="voice-status" id="voice-status">탭해서 말하기 시작</div>
-      </div>
-      <div class="stt-live-box">
-        <div class="stt-label" id="stt-label" style="color:var(--color-text-secondary)">💬 말하면 여기에 실시간으로 변환돼요</div>
-        <div class="stt-text" id="stt-text"></div>
-      </div>
-      <div class="stt-actions" id="stt-actions" style="display:none">
-        <button class="btn-retry" onclick="Record.retry()">🔄 다시 녹음</button>
-        <button class="btn-confirm" onclick="Record.confirmVoice()">✓ 저장하고 다음</button>
-      </div>
+  function _dots() {
+    return `<div class="progress-dots">
+      ${questions.map((q,i)=>{
+        const done=!!answers[i]?.answer, cur=i===step;
+        return `<div class="progress-dot" onclick="Record.goTo(${i})"
+          style="width:${cur?'24px':'8px'};background:${done?'#3DCFC4':cur?q.catColor:'#ddd'}" title="${q.catLabel}"></div>`;
+      }).join('')}
     </div>`;
   }
 
-  // ── 가민 멀티 업로드 ──
-  async function onGarminSelect(input, type) {
-    const files = Array.from(input.files);
-    if (!files.length) return;
-    const parseEl = document.getElementById('garmin-parse-status');
-    if (parseEl) parseEl.style.display = 'block';
-    const statusEl = document.getElementById(`${type}-status`);
-
-    for (const file of files) {
-      await new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          const dataUrl = e.target.result;
-          const base64 = dataUrl.split(',')[1];
-          const mediaType = dataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
-          if (statusEl) statusEl.textContent = `${file.name} 분석 중...`;
-
-          const today = Store.today();
-          const existing = (await Store.Health.getByDate(today)) || {};
-
-          if (type === 'health') {
-            const result = await API.parseGarminImageAuto(base64, mediaType);
-            if (result && result._requireManualInput) {
-              // API 키 없음 → 수동 입력 드로어
-              if (parseEl) parseEl.style.display = 'none';
-              openHealthManualInput(existing, today, statusEl);
-            } else if (result) {
-              if (result.sleepScore != null) Object.assign(existing, { sleep: result.sleepScore, sleepHours: result.totalSleep, deepSleep: result.deepSleep });
-              if (result.stressScore != null) existing.stress = result.stressScore;
-              await Store.Health.save(today, existing);
-              healthData = existing;
-              const parts = [];
-              if (result.sleepScore) parts.push(`수면 ${result.sleepScore}`);
-              if (result.stressScore) parts.push(`스트레스 ${result.stressScore}`);
-              if (statusEl) { statusEl.textContent = parts.length ? parts.join(' · ') + ' 파싱완료' : '수치를 찾지 못했어요'; statusEl.style.color = parts.length ? '#2AADA3' : '#D85A30'; }
-            } else {
-              openHealthManualInput(existing, today, statusEl);
-            }
-          } else if (type === 'run') {
-            const result = await API.parseGarminImageAuto(base64, mediaType, 'run');
-            if (result && result._requireManualInput) {
-              openRunManualInput(existing, today, statusEl);
-            } else if (result) {
-              Object.assign(existing, { pace: result.pace, heartRate: result.heartRate, calories: result.calories, duration: result.duration });
-              await Store.Health.save(today, existing);
-              healthData = existing;
-              if (statusEl) { statusEl.textContent = `페이스 ${result.pace||'--'} 파싱완료`; statusEl.style.color = '#2AADA3'; }
-            } else {
-              openRunManualInput(existing, today, statusEl);
-            }
-          }
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-    if (parseEl) parseEl.style.display = 'none';
+  function _saveCurrent() {
+    const ta = $('text-answer');
+    if (ta && step>=0 && step<questions.length) answers[step].answer = ta.value.trim();
   }
 
+  function goTo(s)  { _saveCurrent(); _stopSTT(); step=s; _renderStep(); }
+  function next()   { _saveCurrent(); _stopSTT(); step++; _render(); }
+  function prev()   { _saveCurrent(); _stopSTT(); step>0 ? (step--,_renderStep()) : (step=-1,_renderMode()); }
+  function skip()   { _stopSTT(); step++; _render(); }
+  function onType(v){ if (step>=0&&step<questions.length) answers[step].answer=v; }
 
-  function openHealthManualInput(existing, today, statusEl) {
-    Drawer.open('건강 수치 직접 입력', `
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div style="font-size:13px;color:var(--color-text-secondary);line-height:1.5">
-          가민 앱에서 확인한 수치를 직접 입력해주세요.
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     3. 한 번에 말하기
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  function startFree() {
+    setStep('자유 녹음','50%');
+    const qList = questions.map(q=>`
+      <div style="display:flex;gap:8px;align-items:flex-start;padding:9px 0;border-bottom:.5px solid #f0f0f0">
+        <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:2px 8px;border-radius:99px;flex-shrink:0">${q.catLabel}</span>
+        <span style="font-size:13px;color:#222;line-height:1.5">${esc(q.q)}</span>
+      </div>`).join('');
+    body().innerHTML = `
+      <div class="section">
+        <div class="card">${qList}</div>
+        <div class="card">
+          <div style="font-size:13px;font-weight:600;color:#222;margin-bottom:4px">🎙 순서 상관없이 자유롭게 말씀해 주세요</div>
+          <div style="font-size:12px;color:#888;margin-bottom:14px;line-height:1.5">AI가 카테고리별로 알아서 정리해드려요.</div>
+          ${_voiceHTML()}
+          <div class="divider-or">또는</div>
+          <textarea class="text-input-area" id="text-answer" placeholder="자유롭게 오늘 하루를 써주세요..." style="height:120px"></textarea>
+          <button class="btn-primary" style="margin-top:10px;width:100%" onclick="Record.confirmFree()">✨ AI로 일기 완성하기</button>
+          <button class="btn-ghost" onclick="Record.backToMode()">← 모드 선택으로</button>
         </div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">수면 점수 (0-100)</div>
-          <input id="manual-sleep" type="number" min="0" max="100" placeholder="예: 75" value="${existing.sleep||''}"
-            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">총 수면 시간</div>
-          <input id="manual-sleep-hours" type="text" placeholder="예: 6h 34m" value="${existing.sleepHours||''}"
-            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">스트레스 수치 (0-100)</div>
-          <input id="manual-stress" type="number" min="0" max="100" placeholder="예: 54" value="${existing.stress||''}"
-            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
-        </div>
-        <button class="btn-primary" onclick="Record.saveHealthManual('${today}')">저장하기</button>
-      </div>
-    `);
-    Record._healthStatusEl = statusEl;
-    Record._healthExisting = existing;
-    Record._healthToday = today;
-  }
-
-  function openRunManualInput(existing, today, statusEl) {
-    Drawer.open('러닝 데이터 직접 입력', `
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div style="font-size:13px;color:var(--color-text-secondary)">가민 앱에서 확인한 수치를 직접 입력해주세요.</div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">평균 페이스 (분/km)</div>
-          <input id="manual-pace" type="text" placeholder="예: 5'38&quot;" value="${existing.pace||''}"
-            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">평균 심박수 (bpm)</div>
-          <input id="manual-hr" type="number" placeholder="예: 158" value="${existing.heartRate||''}"
-            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--color-text-secondary);margin-bottom:5px">칼로리 (kcal)</div>
-          <input id="manual-cal" type="number" placeholder="예: 412" value="${existing.calories||''}"
-            style="width:100%;background:var(--color-background-secondary);border:none;border-radius:10px;padding:10px 13px;font-size:15px;font-family:inherit;outline:none;color:var(--color-text-primary)">
-        </div>
-        <button class="btn-primary" onclick="Record.saveRunManual('${today}')">저장하기</button>
-      </div>
-    `);
-    Record._runStatusEl = statusEl;
-    Record._runExisting = existing;
-    Record._runToday = today;
-  }
-
-  async function saveHealthManual(today) {
-    const sleep = parseInt(document.getElementById('manual-sleep')?.value) || null;
-    const sleepHours = document.getElementById('manual-sleep-hours')?.value || null;
-    const stress = parseInt(document.getElementById('manual-stress')?.value) || null;
-    const existing = Record._healthExisting || {};
-    if (sleep) existing.sleep = sleep;
-    if (sleepHours) existing.sleepHours = sleepHours;
-    if (stress) existing.stress = stress;
-    await Store.Health.save(today, existing);
-    healthData = existing;
-    const statusEl = Record._healthStatusEl;
-    const parts = [];
-    if (sleep) parts.push(`수면 ${sleep}`);
-    if (stress) parts.push(`스트레스 ${stress}`);
-    if (statusEl) { statusEl.textContent = parts.length ? parts.join(' · ') + ' 저장완료' : '저장완료'; statusEl.style.color = '#2AADA3'; }
-    Drawer.close();
-  }
-
-  async function saveRunManual(today) {
-    const pace = document.getElementById('manual-pace')?.value || null;
-    const hr = parseInt(document.getElementById('manual-hr')?.value) || null;
-    const cal = parseInt(document.getElementById('manual-cal')?.value) || null;
-    const existing = Record._runExisting || {};
-    if (pace) existing.pace = pace;
-    if (hr) existing.heartRate = hr;
-    if (cal) existing.calories = cal;
-    await Store.Health.save(today, existing);
-    healthData = existing;
-    const statusEl = Record._runStatusEl;
-    if (statusEl) { statusEl.textContent = `페이스 ${pace||'--'} 저장완료`; statusEl.style.color = '#2AADA3'; }
-    Drawer.close();
-  }
-
-  // ── STT ──
-  function toggleVoice() {
-    if (isRecording) stopRecording();
-    else startRecording();
-  }
-
-  function startRecording() {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert('Chrome 또는 웨일 브라우저에서 사용해주세요.'); return; }
-    if (recognition) { try { recognition.abort(); } catch(e){} recognition = null; }
-    finalTranscript = '';
-    recognition = new SR();
-    recognition.lang = 'ko-KR';
-    recognition.continuous = false;
-    recognition.interimResults = true;
-
-    recognition.onstart = () => {
-      isRecording = true;
-      const ring = document.getElementById('voice-ring');
-      const wave = document.getElementById('waveform');
-      const status = document.getElementById('voice-status');
-      const label = document.getElementById('stt-label');
-      if (ring) { ring.innerHTML = '⏹'; ring.classList.add('recording'); }
-      if (wave) wave.classList.add('active');
-      if (status) { status.textContent = '녹음 중 · 탭하면 완료'; status.classList.add('on'); }
-      if (label) { label.textContent = '🔴 실시간 변환 중'; label.style.color = '#2AADA3'; }
-      const actions = document.getElementById('stt-actions');
-      if (actions) actions.style.display = 'none';
-    };
-
-    recognition.onresult = (e) => {
-      let interim = '', final = finalTranscript;
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) final += e.results[i][0].transcript;
-        else interim = e.results[i][0].transcript;
-      }
-      finalTranscript = final;
-      const textEl = document.getElementById('stt-text');
-      if (textEl) textEl.innerHTML = escapeHtml(finalTranscript) +
-        (interim?`<span class="stt-interim"> ${escapeHtml(interim)}</span>`:'') +
-        '<span class="stt-cursor"></span>';
-      const ta = document.getElementById('text-answer');
-      if (ta) ta.value = finalTranscript + interim;
-    };
-
-    recognition.onerror = (e) => {
-      if (e.error==='no-speech') { if (isRecording) { try { recognition.start(); } catch(err){} } return; }
-      stopRecording();
-    };
-    recognition.onend = () => {
-      if (isRecording) { try { recognition.start(); } catch(err) { stopRecording(); } }
-    };
-    recognition.start();
-  }
-
-  function stopRecording() {
-    isRecording = false;
-    if (recognition) { recognition.onend = null; try { recognition.abort(); } catch(e){} recognition = null; }
-    const ring = document.getElementById('voice-ring');
-    const wave = document.getElementById('waveform');
-    const status = document.getElementById('voice-status');
-    if (ring) { ring.innerHTML = '🎙'; ring.classList.remove('recording'); }
-    if (wave) wave.classList.remove('active');
-    if (status) { status.textContent = '다시 말하기'; status.classList.remove('on'); }
-    const text = finalTranscript.trim();
-    const textEl = document.getElementById('stt-text');
-    if (textEl) textEl.innerHTML = text ? escapeHtml(text) : '<span style="color:var(--color-text-secondary)">음성이 인식되지 않았어요</span>';
-    const label = document.getElementById('stt-label');
-    if (text) {
-      if (label) { label.textContent = '✓ 변환 완료 · 수정 가능해요'; label.style.color = '#2AADA3'; }
-      const actions = document.getElementById('stt-actions');
-      if (actions) actions.style.display = 'flex';
-      const ta = document.getElementById('text-answer');
-      if (ta) ta.value = text;
-      if (currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = text;
-    } else {
-      if (label) { label.textContent = '💬 말하면 여기에 텍스트로 변환돼요'; label.style.color = 'var(--color-text-secondary)'; }
-    }
-  }
-
-  function retry() {
-    finalTranscript = '';
-    const textEl = document.getElementById('stt-text');
-    if (textEl) textEl.innerHTML = '';
-    const actions = document.getElementById('stt-actions');
-    if (actions) actions.style.display = 'none';
-    const label = document.getElementById('stt-label');
-    if (label) { label.textContent = '💬 말하면 여기에 텍스트로 변환돼요'; label.style.color = 'var(--color-text-secondary)'; }
-    startRecording();
-  }
-
-  function confirmVoice() {
-    const ta = document.getElementById('text-answer');
-    const text = ta?.value?.trim();
-    if (text && currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = text;
-    stopRecording();
-    next();
+      </div>`;
   }
 
   function confirmFree() {
-    stopRecording();
-    const ta = document.getElementById('text-answer');
-    const text = ta?.value?.trim() || finalTranscript.trim();
-    dailyQuestions.forEach((q, i) => { if (!answers[i].answer) answers[i].answer = text; });
-    finalize();
+    _stopSTT();
+    const text = $('text-answer')?.value?.trim() || sttText.trim();
+    questions.forEach((_,i) => { if (!answers[i].answer) answers[i].answer=text; });
+    step = questions.length;
+    _finalize();
   }
 
-  function onTextInput(val) {
-    if (currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = val;
+  function backToMode() { _stopSTT(); step=-1; _renderMode(); }
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     4. 마무리 단계
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  function _renderFinal() {
+    setStep('마무리','90%');
+    const done = answers.filter(a=>a.answer).length;
+    body().innerHTML = `
+      <div class="section">
+        ${_dots()}
+        <div class="card">
+          <div style="font-size:13px;color:#888;margin-bottom:10px">
+            ${done}개 질문에 답하셨어요.
+            ${done<questions.length?`<span style="color:#D85A30">(${questions.length-done}개 미답변)</span>`:'🎉 모두 완료!'}
+          </div>
+          ${questions.map((q,i)=>`
+            <div onclick="Record.goTo(${i})" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f5f5f5;border-radius:10px;cursor:pointer;margin-bottom:6px">
+              <span>${answers[i]?.answer?'✅':'⬜'}</span>
+              <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:1px 7px;border-radius:99px">${q.catLabel}</span>
+              <span style="font-size:12px;color:${answers[i]?.answer?'#222':'#999'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                ${answers[i]?.answer?esc(answers[i].answer.slice(0,30))+'...':'탭해서 답변 추가'}
+              </span>
+              <span style="font-size:11px;color:#2AADA3">수정</span>
+            </div>`).join('')}
+        </div>
+        <div class="card">
+          <div class="drawer-label">추가 선택 항목</div>
+          <div style="padding:8px 0;border-bottom:.5px solid #f0f0f0">
+            <div style="font-size:13px;color:#222;margin-bottom:6px">아이와 함께한 시간</div>
+            <select id="child-time" style="font-size:13px;background:#f5f5f5;border:none;border-radius:8px;padding:8px 12px;width:100%;outline:none;color:#222">
+              <option value="">선택 안 함</option>
+              <option>거의 없음</option><option>1시간</option><option>2시간 이상</option>
+            </select>
+          </div>
+          <div style="padding:8px 0">
+            <div style="font-size:13px;color:#222;margin-bottom:6px">✨ 자유 메모</div>
+            <textarea class="text-input-area" id="free-note" placeholder="오늘 하루 추가로 남기고 싶은 말..." style="height:70px"></textarea>
+          </div>
+        </div>
+        <button class="btn-primary" style="width:100%" onclick="Record.finalize()">✨ AI로 일기 완성하기</button>
+      </div>`;
   }
 
-  function onFreeInput(val) {
-    if (answers[0]) answers[0].answer = val;
-  }
-
-  function next() {
-    stopRecording();
-    const ta = document.getElementById('text-answer');
-    if (ta && currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = ta.value.trim();
-    currentStep++;
-    renderStep();
-  }
-
-  function prev() {
-    stopRecording();
-    const ta = document.getElementById('text-answer');
-    if (ta && currentStep >= 0 && currentStep < dailyQuestions.length) answers[currentStep].answer = ta.value.trim();
-    if (currentStep > 0) currentStep--;
-    else { renderModeSelect(); return; }
-    renderStep();
-  }
-
-  function skip() {
-    stopRecording();
-    currentStep++;
-    renderStep();
-  }
-
-  // ── 일기 완성 ──
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     5. 일기 완성 (finalize)
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function finalize() {
-    stopRecording();
-    const body = document.getElementById('rec-body');
-    hideFooter();
-    body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;gap:12px">
+    _stopSTT();
+    footer().style.display = 'none';
+    body().innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 20px;gap:12px">
       <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
-      <div style="font-size:14px;color:var(--color-text-secondary);text-align:center">AI가 카테고리별로<br>일기를 정리 중이에요...</div>
+      <div style="font-size:14px;color:#888;text-align:center">AI가 카테고리별로<br>일기를 정리 중이에요...</div>
     </div>`;
 
-    const freeNote = document.getElementById('free-note')?.value || '';
-    const childTime = document.getElementById('child-time')?.value || '';
-    const validAnswers = answers.filter(a => a.answer);
-    if (freeNote) validAnswers.push({ question: '자유 메모', category: 'etc', catLabel: '✨ 그 외', answer: freeNote });
-    if (childTime) validAnswers.push({ question: '아이와 함께한 시간', category: 'parenting', catLabel: '👨‍👧 육아', answer: childTime });
+    // 추가 항목
+    const note   = $('free-note')?.value  || '';
+    const child  = $('child-time')?.value || '';
+    const valid  = answers.filter(a=>a.answer);
+    if (note)  valid.push({ question:'자유 메모', category:'etc', catLabel:'✨ 그 외', answer:note });
+    if (child) valid.push({ question:'아이와 함께한 시간', category:'parenting', catLabel:'👨‍👧 육아', answer:child });
 
-    const todos = await Store.Todos.getAll();
-    const today = Store.today();
-    const health = await Store.Health.getByDate(today);
-    const result = await API.generateDiary(validAnswers, health);
+    const todos  = await Store.Todos.getAll();
+    const today  = Store.today();
+    const hlth   = await Store.Health.getByDate(today);
+    const result = await API.generateDiary(valid, hlth);
 
-    const diary = result?.diary || validAnswers.map(a => a.answer).join('\n');
-    const tags = result?.tags || [];
-    const mood = result?.mood || '😊';
-    const summary = result?.summary || diary.slice(0, 30);
-    const aiFeedback = result?.feedback || '';
+    const diary    = result?.diary    || valid.map(a=>a.answer).join('\n');
+    const tags     = result?.tags     || [];
+    const mood     = result?.mood     || '😊';
+    const summary  = result?.summary  || diary.slice(0,30);
+    const feedback = result?.feedback || '';
 
-    const now = new Date();
-    const days = ['일','월','화','수','목','금','토'];
+    // 카테고리 그룹
+    const grouped = {};
+    valid.forEach(a => { const c=a.category||'etc'; (grouped[c]=grouped[c]||[]).push(a); });
+
+    await Store.Entries.save(today, { diary, tags, mood, summary, answers:valid, categorized:grouped, health:hlth });
+    _reset();
+
+    // 날씨
+    const amTemp = $('w-am')?.textContent||'';
+    const wBadge = amTemp&&amTemp!=='--°C' ? `🌤 ${amTemp}` : '';
+    const now = new Date(), days=['일','월','화','수','목','금','토'];
     const dateStr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
-    const amTemp = document.getElementById('w-am')?.textContent || '';
-    const weatherBadge = amTemp && amTemp !== '--°C' ? `🌤 ${amTemp}` : '';
 
-    const categorized = {};
-    validAnswers.forEach(a => {
-      const cat = a.category || 'etc';
-      if (!categorized[cat]) categorized[cat] = [];
-      categorized[cat].push(a);
-    });
-
-    await Store.Entries.save(today, { diary, tags, mood, summary, answers: validAnswers, categorized, health });
-
-    // 완성 후 초기화 (다음날 새로 시작)
-    _initialized = false;
-
-    const catCards = Object.entries(categorized).map(([catId, items]) => {
-      const cat = QuestionPool.getCategoryInfo(catId);
-      const qAndA = items.map(i => `
-        <div style="margin-bottom:8px">
-          <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:3px">${escapeHtml(i.question)}</div>
-          <div style="font-size:13px;color:var(--color-text-primary);line-height:1.65">${escapeHtml(i.answer)}</div>
-        </div>`).join('');
-      return `<div style="background:var(--color-background-primary);border-radius:12px;padding:12px 14px">
-        <div style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:${cat.color};background:${cat.bg};padding:3px 10px;border-radius:99px;margin-bottom:8px">${cat.label}</div>
-        ${qAndA}
+    // 카테고리 카드
+    const catCards = Object.entries(grouped).map(([cid,items]) => {
+      const cat = QuestionPool.getCategoryInfo(cid);
+      return `<div class="cat-card">
+        <div class="cat-badge" style="color:${cat.color};background:${cat.bg}">${cat.label}</div>
+        ${items.map(i=>`
+          <div style="margin-bottom:7px">
+            <div class="cat-q">${esc(i.question)}</div>
+            <div class="cat-a">${esc(i.answer)}</div>
+          </div>`).join('')}
       </div>`;
     }).join('');
 
-    const todoHtml = todos.length ? `
-      <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
-        <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:10px">☑ 오늘 할 일 완료 현황</div>
-        ${todos.map(t=>`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:${t.done?'var(--color-text-secondary)':'var(--color-text-primary)'};text-decoration:${t.done?'line-through':'none'};padding:4px 0">
-          <span>${t.done?'✅':'⬜'}</span><span>${escapeHtml(t.text)}</span>
+    const todoHTML = todos.length ? `
+      <div class="diary-result-card">
+        <div class="diary-result-label">☑ 오늘 할 일 현황</div>
+        ${todos.map(t=>`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:${t.done?'#bbb':'#222'};text-decoration:${t.done?'line-through':'none'};padding:4px 0">
+          <span>${t.done?'✅':'⬜'}</span><span>${esc(t.text)}</span>
         </div>`).join('')}
       </div>` : '';
 
-    const healthHtml = health ? `
-      <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
-        <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:10px">💪 오늘 건강 데이터</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
-          <div style="background:var(--color-background-secondary);border-radius:10px;padding:9px 8px;text-align:center">
-            <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:3px">수면점수</div>
-            <div style="font-size:16px;font-weight:600;color:#534AB7">${health.sleep||'--'}</div>
-          </div>
-          <div style="background:var(--color-background-secondary);border-radius:10px;padding:9px 8px;text-align:center">
-            <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:3px">스트레스</div>
-            <div style="font-size:16px;font-weight:600;color:#D85A30">${health.stress||'--'}</div>
-          </div>
-          <div style="background:var(--color-background-secondary);border-radius:10px;padding:9px 8px;text-align:center">
-            <div style="font-size:10px;color:var(--color-text-secondary);margin-bottom:3px">러닝</div>
-            <div style="font-size:14px;font-weight:600;color:#085041">${health.pace||'--'}</div>
-          </div>
+    const hlthHTML = hlth ? `
+      <div class="diary-result-card">
+        <div class="diary-result-label">💪 오늘 건강 데이터</div>
+        <div class="health-mini">
+          <div class="health-chip"><div class="hc-label2">수면점수</div><div class="sc-val" style="color:#534AB7;font-size:16px">${hlth.sleep||'--'}</div></div>
+          <div class="health-chip"><div class="hc-label2">스트레스</div><div class="sc-val" style="color:#D85A30;font-size:16px">${hlth.stress||'--'}</div></div>
+          <div class="health-chip"><div class="hc-label2">러닝</div><div class="sc-val" style="color:#085041;font-size:13px">${hlth.pace||'--'}</div></div>
         </div>
       </div>` : '';
 
-    const feedbackHtml = aiFeedback ? `
-      <div style="background:linear-gradient(135deg,#E1F5EE,#EEEDFE);border-radius:12px;padding:13px 14px">
-        <div style="font-size:10px;font-weight:600;color:#0F6E56;margin-bottom:6px">✨ AI 피드백</div>
-        <div style="font-size:13px;color:#085041;line-height:1.65">${escapeHtml(aiFeedback)}</div>
+    const fbHTML = feedback ? `
+      <div class="ai-fb">
+        <div class="ai-fb-label">✨ AI 피드백</div>
+        <div class="ai-fb-text">${esc(feedback)}</div>
       </div>` : '';
 
-    const tagHtml = tags.length ? `
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        ${tags.map(t=>`<span style="background:#E1F5EE;color:#0F6E56;border-radius:99px;padding:4px 11px;font-size:11px">${escapeHtml(t)}</span>`).join('')}
-      </div>` : '';
-
-    body.innerHTML = `
+    body().innerHTML = `
       <div style="display:flex;flex-direction:column;gap:12px;padding-bottom:16px">
         <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 0 8px">
-          <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#3DCFC4,#B5E857);display:flex;align-items:center;justify-content:center;font-size:32px">✅</div>
-          <div style="font-size:20px;font-weight:600;color:var(--color-text-primary);text-align:center">오늘 일기가 완성됐어요</div>
-          <div style="font-size:13px;color:var(--color-text-secondary);text-align:center;line-height:1.6">AI가 카테고리별로 오늘의 이야기를 정리했어요.</div>
+          <div class="complete-ring">✅</div>
+          <div style="font-size:20px;font-weight:600;color:#222;text-align:center">오늘 일기가 완성됐어요</div>
+          <div style="font-size:13px;color:#888;text-align:center;line-height:1.6">AI가 카테고리별로 오늘의 이야기를<br>정리했어요.</div>
         </div>
-        <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
+        <div class="card">
           <div style="display:flex;align-items:center;gap:10px">
             <div style="font-size:34px">${mood}</div>
             <div style="flex:1">
-              <div style="font-size:15px;font-weight:600;color:var(--color-text-primary)">${dateStr}</div>
-              <div style="font-size:12px;color:var(--color-text-secondary);margin-top:2px">${escapeHtml(summary)}</div>
+              <div style="font-size:15px;font-weight:600;color:#222">${dateStr}</div>
+              <div style="font-size:12px;color:#999;margin-top:2px">${esc(summary)}</div>
             </div>
-            ${weatherBadge ? `<div style="background:var(--color-background-secondary);border-radius:99px;padding:4px 10px;font-size:12px;color:var(--color-text-secondary)">${weatherBadge}</div>` : ''}
+            ${wBadge?`<div style="background:#f5f5f5;border-radius:99px;padding:4px 10px;font-size:12px;color:#888">${wBadge}</div>`:''}
           </div>
         </div>
-        <div style="background:var(--color-background-primary);border-radius:14px;padding:14px 16px">
-          <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:8px">✨ AI가 완성한 오늘의 일기</div>
-          <div style="font-size:14px;color:var(--color-text-primary);line-height:1.8">${escapeHtml(diary)}</div>
+        <div class="diary-result-card">
+          <div class="diary-result-label">✨ AI가 완성한 오늘의 일기</div>
+          <div style="font-size:14px;color:#222;line-height:1.8">${esc(diary)}</div>
         </div>
         <div>
-          <div style="font-size:11px;font-weight:600;color:var(--color-text-secondary);letter-spacing:0.04em;margin-bottom:8px">📂 카테고리별 기록</div>
+          <div class="section-label" style="margin-bottom:8px">📂 카테고리별 기록</div>
           <div style="display:flex;flex-direction:column;gap:8px">${catCards}</div>
         </div>
-        ${todoHtml}
-        ${healthHtml}
-        ${feedbackHtml}
-        ${tagHtml}
+        ${todoHTML}${hlthHTML}${fbHTML}
+        <div class="tag-wrap" style="justify-content:center">${tags.map(t=>`<span class="tag tag-g">${esc(t)}</span>`).join('')}</div>
         <button class="btn-primary" onclick="App.go('home')" style="width:100%;margin-top:4px">🏠 홈으로 돌아가기</button>
-        <button onclick="Record.shareEntry()" style="width:100%;background:var(--color-background-secondary);color:var(--color-text-secondary);border-radius:14px;padding:11px;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;border:none;font-family:inherit;cursor:pointer">
+        <button onclick="Record.share()" style="width:100%;background:#f5f5f5;color:#888;border:none;border-radius:14px;padding:11px;font-size:13px;font-family:inherit;cursor:pointer">
           📤 일기 공유 / 내보내기
         </button>
       </div>`;
   }
 
-  function shareEntry() {
+  function share() {
     const text = answers.filter(a=>a.answer).map(a=>`[${a.catLabel||''}]\n${a.answer}`).join('\n\n');
-    if (navigator.share) {
-      navigator.share({ title: '나의 일기', text });
-    } else {
-      navigator.clipboard?.writeText(text).then(() => alert('일기가 클립보드에 복사됐어요!'));
+    if (navigator.share) navigator.share({ title:'나의 일기', text });
+    else navigator.clipboard?.writeText(text).then(()=>alert('클립보드에 복사됐어요!'));
+  }
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     STT (음성 인식)
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  function _voiceHTML() {
+    return `<div class="voice-zone">
+      <div class="voice-top" onclick="Record.toggleVoice()">
+        <div class="voice-ring" id="voice-ring">🎙</div>
+        <div class="waveform" id="waveform"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="voice-status" id="voice-status">탭해서 말하기 시작</div>
+      </div>
+      <div class="stt-live-box">
+        <div class="stt-label" id="stt-label">💬 말하면 여기에 실시간으로 변환돼요</div>
+        <div class="stt-text" id="stt-text"></div>
+      </div>
+      <div class="stt-actions" id="stt-actions" style="display:none">
+        <button class="btn-retry" onclick="Record.retryVoice()">🔄 다시 녹음</button>
+        <button class="btn-confirm" onclick="Record.confirmVoice()">✓ 저장하고 다음</button>
+      </div>
+    </div>`;
+  }
+
+  function toggleVoice() { recoding ? _stopSTT() : _startSTT(); }
+
+  function _startSTT() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Chrome 또는 웨일 브라우저에서 사용해주세요.'); return; }
+    if (recog) { try{recog.abort();}catch{} recog=null; }
+    sttText = '';
+    recog = new SR();
+    Object.assign(recog, { lang:'ko-KR', continuous:false, interimResults:true });
+
+    recog.onstart = () => {
+      recoding = true;
+      const r=$('voice-ring'), w=$('waveform'), s=$('voice-status'), l=$('stt-label');
+      if(r){r.innerHTML='⏹';r.classList.add('recording');}
+      if(w)w.classList.add('active');
+      if(s){s.textContent='녹음 중 · 탭하면 완료';s.classList.add('on');}
+      if(l){l.textContent='🔴 실시간 변환 중';l.style.color='#2AADA3';}
+      const a=$('stt-actions');if(a)a.style.display='none';
+    };
+
+    recog.onresult = e => {
+      let interim='', final=sttText;
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal) final+=e.results[i][0].transcript;
+        else interim=e.results[i][0].transcript;
+      }
+      sttText=final;
+      const t=$('stt-text');
+      if(t) t.innerHTML=esc(final)+(interim?`<span class="stt-interim"> ${esc(interim)}</span>`:'')+`<span class="stt-cursor"></span>`;
+      const ta=$('text-answer');if(ta)ta.value=final+interim;
+    };
+
+    recog.onerror = e => { if(e.error==='no-speech'&&recoding){try{recog.start();}catch{}} else _stopSTT(); };
+    recog.onend   = () => { if(recoding){try{recog.start();}catch{_stopSTT();}} };
+    recog.start();
+  }
+
+  function _stopSTT() {
+    recoding = false;
+    if(recog){recog.onend=null;try{recog.abort();}catch{}recog=null;}
+    const r=$('voice-ring'),w=$('waveform'),s=$('voice-status'),l=$('stt-label');
+    if(r){r.innerHTML='🎙';r.classList.remove('recording');}
+    if(w)w.classList.remove('active');
+    if(s){s.textContent='다시 말하기';s.classList.remove('on');}
+    const text=sttText.trim();
+    const t=$('stt-text');
+    if(t) t.innerHTML=text?esc(text):'<span style="color:#bbb">음성이 인식되지 않았어요</span>';
+    if(l){l.textContent=text?'✓ 변환 완료 · 수정 가능해요':'💬 말하면 여기에 텍스트로 변환돼요';l.style.color=text?'#2AADA3':'#888';}
+    if(text){
+      const a=$('stt-actions');if(a)a.style.display='flex';
+      const ta=$('text-answer');if(ta)ta.value=text;
+      if(step>=0&&step<questions.length)answers[step].answer=text;
     }
   }
 
-  // ── 헬퍼 ──
-  function setStep(text, width) {
-    const el = document.getElementById('rec-step');
-    const prog = document.getElementById('rec-progress');
-    if (el) el.textContent = text;
-    if (prog) prog.style.width = width;
-  }
-  function setBody(html) {
-    const el = document.getElementById('rec-body');
-    if (el) el.innerHTML = html;
-  }
-  function showFooter(btnText) {
-    const footer = document.getElementById('rec-footer');
-    const btn = document.getElementById('rec-next-btn');
-    if (footer) footer.style.display = '';
-    if (btn) { btn.textContent = btnText; btn.onclick = Record.next; }
-  }
-  function hideFooter() {
-    const footer = document.getElementById('rec-footer');
-    if (footer) footer.style.display = 'none';
-  }
+  function retryVoice() { sttText=''; const t=$('stt-text');if(t)t.innerHTML=''; const a=$('stt-actions');if(a)a.style.display='none'; _startSTT(); }
+  function confirmVoice() { _saveCurrent(); _stopSTT(); step++; _render(); }
 
-  return { init, next, prev, skip, goTo, finalize, reset, shareEntry, renderModeSelect,
-    toggleVoice, retry, confirmVoice, confirmFree, onTextInput, onFreeInput, onGarminSelect, startStep, startFree,
-    saveHealthManual, saveRunManual };
+  return {
+    init, startStep, startFree, next, prev, skip, goTo,
+    onGarmin, saveManual, onType, confirmFree, backToMode,
+    finalize, share, toggleVoice, retryVoice, confirmVoice,
+  };
 })();
