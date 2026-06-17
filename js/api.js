@@ -9,7 +9,7 @@ const API = (() => {
 
   // ── Firebase Functions 프록시 URL ──────────────────
   // 배포 후 실제 URL로 교체하세요 (STEP 3 가이드 참고)
-  const PROXY_URL = 'https://us-central1-diary-app-33e4a.cloudfunctions.net/claudeProxy';
+  const PROXY_URL = 'https://diary-app.ththoughts.workers.dev';
   const MODEL     = 'claude-sonnet-4-20250514';
 
   // 하위 호환용 (settings.js에서 호출하는 경우 대비 — 실제로는 서버에서 관리)
