@@ -4,20 +4,21 @@
 const Record = (() => {
 
   /* ── 상태 ── */
-  let questions = [];
-  let answers   = [];         // [{ question, category, catLabel, answer }]
-  let step      = -1;         // -1: 모드선택, 0~N-1: 질문, N: 마무리
-  let health    = {};
-  let active    = false;      // 세션 진행 중 (화면 복귀 시 유지)
-  let recog     = null;
-  let recoding  = false;
-  let sttText   = '';
+  let questions  = [];
+  let answers    = [];         // [{ question, category, catLabel, answer }]
+  let step       = -1;         // -1: 모드선택, 0~N-1: 질문, N: 마무리
+  let health     = {};
+  let active     = false;      // 세션 진행 중 (화면 복귀 시 유지)
+  let recog      = null;
+  let recoding   = false;
+  let sttText    = '';
+  let _chosenMood = '';        // 사용자가 직접 선택한 기분 (없으면 AI 결과 사용)
 
   /* ── DOM 헬퍼 ── */
   const body    = () => $('rec-body');
   const footer  = () => $('rec-footer');
   const setStep = (txt, pct) => {
-    if ($('rec-step'))    $('rec-step').textContent = txt;
+    if ($('rec-step'))     $('rec-step').textContent = txt;
     if ($('rec-progress')) $('rec-progress').style.width = pct;
   };
 
@@ -26,11 +27,12 @@ const Record = (() => {
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function init() {
     if (active) { _render(); return; }           // 화면 복귀 시 상태 유지
-    questions = QuestionPool.getDailyQuestions();
-    answers   = questions.map(q => ({ question:q.q, category:q.catId, catLabel:q.catLabel, answer:'' }));
-    health    = (await Store.Health.getByDate(Store.today())) || {};
-    step      = -1;
-    active    = true;
+    questions    = QuestionPool.getDailyQuestions();
+    answers      = questions.map(q => ({ question: q.q, category: q.catId, catLabel: q.catLabel, answer: '' }));
+    health       = (await Store.Health.getByDate(Store.today())) || {};
+    step         = -1;
+    active       = true;
+    _chosenMood  = '';
     _render();
   }
 
@@ -41,14 +43,14 @@ const Record = (() => {
     else                               _renderFinal();
   }
 
-  function _reset() { active=false; step=-1; sttText=''; _stopSTT(); }
+  function _reset() { active = false; step = -1; sttText = ''; _chosenMood = ''; _stopSTT(); }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      1. 모드 선택
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   function _renderMode() {
     setStep('모드 선택', '0%');
-    const preview = questions.map(q=>`
+    const preview = questions.map(q => `
       <div style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-bottom:.5px solid #f0f0f0">
         <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:2px 7px;border-radius:99px;flex-shrink:0">${q.catLabel}</span>
         <span style="font-size:12px;color:#888;line-height:1.5">${esc(q.q)}</span>
@@ -76,99 +78,122 @@ const Record = (() => {
       </div>`;
   }
 
-  /* ── 가민 업로드 ── */
+  /* ── 가민 업로드 섹션 ── */
   function _garminSection() {
     return `<div class="card">
       <div class="drawer-label">📷 가민 스크린샷 업로드</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${_uploadLabel('health','❤️‍🩹','건강 분석 (수면+스트레스)', health.sleep||health.stress ? `수면${health.sleep||'--'} · 스트레스${health.stress||'--'} 완료` : '')}
-        ${_uploadLabel('run',  '🏃',  '러닝 활동', health.pace ? `페이스 ${health.pace} 완료` : '')}
+        ${_uploadLabel('health', '❤️‍🩹', '건강 분석 (수면+스트레스)', health.sleep || health.stress ? `수면${health.sleep || '--'} · 스트레스${health.stress || '--'} 완료` : '')}
+        ${_uploadLabel('run',    '🏃',   '러닝 활동', health.pace ? `페이스 ${health.pace} 완료` : '')}
       </div>
-      <div id="garmin-loading" style="display:none;margin-top:8px"><div class="loading"><div class="spinner"></div> 이미지 분석 중...</div></div>
+      <div id="garmin-loading" style="display:none;margin-top:8px">
+        <div class="loading"><div class="spinner"></div> <span id="garmin-loading-msg">이미지 분석 중...</span></div>
+      </div>
     </div>`;
   }
 
-  function _uploadLabel(type, icon, label, done='') {
+  function _uploadLabel(type, icon, label, done = '') {
     return `<label class="upload-label">
       <span style="font-size:18px">${icon}</span>
       <div style="flex:1">
         <div class="ul-title">${label}</div>
-        <div class="ul-status${done?' done':''}" id="${type}-status">${done||'탭해서 이미지 선택'}</div>
+        <div class="ul-status${done ? ' done' : ''}" id="${type}-status">${done || '탭해서 이미지 선택 (여러 장 가능)'}</div>
       </div>
-      <span style="color:${done?'#2AADA3':'#ccc'}">${done?'✓':'+'}</span>
+      <span style="color:${done ? '#2AADA3' : '#ccc'}">${done ? '✓' : '+'}</span>
       <input type="file" accept="image/*" multiple style="display:none" onchange="Record.onGarmin(this,'${type}')">
     </label>`;
   }
 
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     가민 이미지 업로드 — Promise.all 병렬 처리
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function onGarmin(input, type) {
     const files = Array.from(input.files);
     if (!files.length) return;
-    const loading  = $('garmin-loading');
-    const statusEl = $(`${type}-status`);
-    if (loading) loading.style.display = 'block';
 
-    for (const file of files) {
-      if (statusEl) statusEl.textContent = `${file.name} 분석 중...`;
-      const { b64, mime } = await _readFile(file);
-      const today = Store.today();
+    const loading    = $('garmin-loading');
+    const loadingMsg = $('garmin-loading-msg');
+    const statusEl   = $(`${type}-status`);
+
+    if (loading)    loading.style.display = 'block';
+    if (statusEl)   statusEl.textContent  = `${files.length}장 분석 중... (병렬 처리)`;
+    if (loadingMsg) loadingMsg.textContent = `${files.length}장 동시 분석 중...`;
+
+    try {
+      // ── 모든 파일을 동시에 base64로 변환 ──
+      const fileData = await Promise.all(files.map(_readFile));
+
+      // ── 배치 병렬 파싱 요청 ──
+      const images = fileData.map(({ b64, mime }) => ({ base64: b64, mediaType: mime, type }));
+      const batchResult = await API.parseGarminBatch(images);
+
+      const today    = Store.today();
       const existing = (await Store.Health.getByDate(today)) || {};
 
-      if (API.hasKey()) {
-        const result = await API.parseGarmin(b64, mime, type);
-        if (result) {
-          _mergeHealth(existing, type, result);
-          await Store.Health.save(today, existing);
-          health = existing;
-          if (statusEl) { statusEl.textContent = _healthText(type,existing); statusEl.className='ul-status done'; }
-        } else {
-          _openManual(type, existing, today, statusEl);
+      if (batchResult[type]) {
+        _mergeHealth(existing, type, batchResult[type]);
+        await Store.Health.save(today, existing);
+        health = existing;
+        if (statusEl) {
+          statusEl.textContent  = _healthText(type, existing);
+          statusEl.className    = 'ul-status done';
         }
       } else {
+        // 파싱 실패 → 수동 입력 드로어
         _openManual(type, existing, today, statusEl);
       }
+    } catch (e) {
+      console.error('[Garmin 파싱 오류]', e);
+      const today    = Store.today();
+      const existing = (await Store.Health.getByDate(today)) || {};
+      _openManual(type, existing, today, statusEl);
+    } finally {
+      if (loading) loading.style.display = 'none';
     }
-    if (loading) loading.style.display = 'none';
   }
 
   const _readFile = file => new Promise(res => {
     const r = new FileReader();
-    r.onload = e => { const d=e.target.result; res({ b64:d.split(',')[1], mime:d.split(';')[0].split(':')[1]||'image/jpeg' }); };
+    r.onload = e => {
+      const d = e.target.result;
+      res({ b64: d.split(',')[1], mime: d.split(';')[0].split(':')[1] || 'image/jpeg' });
+    };
     r.readAsDataURL(file);
   });
 
   function _mergeHealth(e, type, r) {
-    if (type==='health') {
-      if (r.sleepScore!=null) Object.assign(e,{sleep:r.sleepScore,sleepHours:r.totalSleep,deepSleep:r.deepSleep});
-      if (r.stressScore!=null) e.stress=r.stressScore;
+    if (type === 'health') {
+      if (r.sleepScore  != null) Object.assign(e, { sleep: r.sleepScore, sleepHours: r.totalSleep, deepSleep: r.deepSleep });
+      if (r.stressScore != null) e.stress = r.stressScore;
     } else {
-      Object.assign(e,{pace:r.pace,heartRate:r.heartRate,calories:r.calories,duration:r.duration});
+      Object.assign(e, { pace: r.pace, heartRate: r.heartRate, calories: r.calories, duration: r.duration });
     }
   }
 
-  const _healthText = (type,h) => type==='health'
-    ? `수면 ${h.sleep||'--'} · 스트레스 ${h.stress||'--'} 완료`
-    : `페이스 ${h.pace||'--'} 완료`;
+  const _healthText = (type, h) => type === 'health'
+    ? `수면 ${h.sleep || '--'} · 스트레스 ${h.stress || '--'} 완료`
+    : `페이스 ${h.pace || '--'} 완료`;
 
-  // API 키 없을 때 수동 입력
+  /* API 파싱 실패 시 수동 입력 드로어 */
   function _openManual(type, existing, today, statusEl) {
     Record._mCtx = { existing, today, statusEl, type };
-    if (type==='health') {
+    if (type === 'health') {
       Drawer.open('건강 수치 직접 입력', `
         <div class="drawer-label">수면 점수 (0-100)</div>
-        <input class="label-input" id="m-sleep" type="number" min="0" max="100" placeholder="예: 75" value="${existing.sleep||''}">
+        <input class="label-input" id="m-sleep" type="number" min="0" max="100" placeholder="예: 75" value="${existing.sleep || ''}">
         <div class="drawer-label">총 수면 시간</div>
-        <input class="label-input" id="m-sleep-h" type="text" placeholder="예: 6h 34m" value="${existing.sleepHours||''}">
+        <input class="label-input" id="m-sleep-h" type="text" placeholder="예: 6h 34m" value="${existing.sleepHours || ''}">
         <div class="drawer-label">스트레스 수치 (0-100)</div>
-        <input class="label-input" id="m-stress" type="number" min="0" max="100" placeholder="예: 54" value="${existing.stress||''}">
+        <input class="label-input" id="m-stress" type="number" min="0" max="100" placeholder="예: 54" value="${existing.stress || ''}">
         <button class="btn-primary" onclick="Record.saveManual()">저장하기</button>`);
     } else {
       Drawer.open('러닝 데이터 직접 입력', `
         <div class="drawer-label">평균 페이스 (분/km)</div>
-        <input class="label-input" id="m-pace" type="text" placeholder="예: 5'38&quot;" value="${existing.pace||''}">
+        <input class="label-input" id="m-pace" type="text" placeholder="예: 5'38&quot;" value="${existing.pace || ''}">
         <div class="drawer-label">평균 심박수 (bpm)</div>
-        <input class="label-input" id="m-hr" type="number" placeholder="예: 158" value="${existing.heartRate||''}">
+        <input class="label-input" id="m-hr" type="number" placeholder="예: 158" value="${existing.heartRate || ''}">
         <div class="drawer-label">칼로리 (kcal)</div>
-        <input class="label-input" id="m-cal" type="number" placeholder="예: 412" value="${existing.calories||''}">
+        <input class="label-input" id="m-cal" type="number" placeholder="예: 412" value="${existing.calories || ''}">
         <button class="btn-primary" onclick="Record.saveManual()">저장하기</button>`);
     }
   }
@@ -176,27 +201,31 @@ const Record = (() => {
   async function saveManual() {
     const ctx = Record._mCtx; if (!ctx) return;
     const e = ctx.existing;
-    if (ctx.type==='health') {
-      const sleep=parseInt($('m-sleep')?.value)||null, sh=$('m-sleep-h')?.value||null, stress=parseInt($('m-stress')?.value)||null;
-      if (sleep) e.sleep=sleep; if (sh) e.sleepHours=sh; if (stress) e.stress=stress;
+    if (ctx.type === 'health') {
+      const sleep = parseInt($('m-sleep')?.value) || null, sh = $('m-sleep-h')?.value || null, stress = parseInt($('m-stress')?.value) || null;
+      if (sleep)  e.sleep     = sleep;
+      if (sh)     e.sleepHours = sh;
+      if (stress) e.stress    = stress;
     } else {
-      const pace=$('m-pace')?.value||null, hr=parseInt($('m-hr')?.value)||null, cal=parseInt($('m-cal')?.value)||null;
-      if (pace) e.pace=pace; if (hr) e.heartRate=hr; if (cal) e.calories=cal;
+      const pace = $('m-pace')?.value || null, hr = parseInt($('m-hr')?.value) || null, cal = parseInt($('m-cal')?.value) || null;
+      if (pace) e.pace      = pace;
+      if (hr)   e.heartRate = hr;
+      if (cal)  e.calories  = cal;
     }
     await Store.Health.save(ctx.today, e);
     health = e;
-    if (ctx.statusEl) { ctx.statusEl.textContent=_healthText(ctx.type,e); ctx.statusEl.className='ul-status done'; }
+    if (ctx.statusEl) { ctx.statusEl.textContent = _healthText(ctx.type, e); ctx.statusEl.className = 'ul-status done'; }
     Drawer.close();
   }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      2. 질문형 모드
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-  function startStep() { step=0; _renderStep(); }
+  function startStep() { step = 0; _renderStep(); }
 
   function _renderStep() {
     const total = questions.length;
-    setStep(`${step+1} / ${total}`, `${Math.round(((step+1)/(total+1))*100)}%`);
+    setStep(`${step + 1} / ${total}`, `${Math.round(((step + 1) / (total + 1)) * 100)}%`);
     if (step >= total) { _renderFinal(); return; }
 
     const q = questions[step];
@@ -211,15 +240,15 @@ const Record = (() => {
           ${_voiceHTML()}
           <div class="divider-or">또는</div>
           <textarea class="text-input-area" id="text-answer" placeholder="직접 타이핑해도 좋아요..."
-            oninput="Record.onType(this.value)">${esc(answers[step]?.answer||'')}</textarea>
-          ${answers[step]?.answer?`<div style="font-size:11px;color:#2AADA3;margin-top:6px">✓ 기록됨 · 수정하려면 위 내용을 바꿔주세요</div>`:''}
+            oninput="Record.onType(this.value)">${esc(answers[step]?.answer || '')}</textarea>
+          ${answers[step]?.answer ? `<div style="font-size:11px;color:#2AADA3;margin-top:6px">✓ 기록됨 · 수정하려면 위 내용을 바꿔주세요</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
           <button class="btn-primary" onclick="Record.next()">
-            ${step===questions.length-1 ? '마무리 →' : '다음 질문 →'}
+            ${step === questions.length - 1 ? '마무리 →' : '다음 질문 →'}
           </button>
           <div style="display:flex;gap:8px">
-            ${step>0?`<button class="btn-secondary" style="flex:1" onclick="Record.prev()">← 이전</button>`:'<div style="flex:1"></div>'}
+            ${step > 0 ? `<button class="btn-secondary" style="flex:1" onclick="Record.prev()">← 이전</button>` : '<div style="flex:1"></div>'}
             <button class="btn-secondary" style="flex:1" onclick="Record.skip()">건너뛰기</button>
           </div>
         </div>
@@ -228,31 +257,31 @@ const Record = (() => {
 
   function _dots() {
     return `<div class="progress-dots">
-      ${questions.map((q,i)=>{
-        const done=!!answers[i]?.answer, cur=i===step;
+      ${questions.map((q, i) => {
+        const done = !!answers[i]?.answer, cur = i === step;
         return `<div class="progress-dot" onclick="Record.goTo(${i})"
-          style="width:${cur?'24px':'8px'};background:${done?'#3DCFC4':cur?q.catColor:'#ddd'}" title="${q.catLabel}"></div>`;
+          style="width:${cur ? '24px' : '8px'};background:${done ? '#3DCFC4' : cur ? q.catColor : '#ddd'}" title="${q.catLabel}"></div>`;
       }).join('')}
     </div>`;
   }
 
   function _saveCurrent() {
     const ta = $('text-answer');
-    if (ta && step>=0 && step<questions.length) answers[step].answer = ta.value.trim();
+    if (ta && step >= 0 && step < questions.length) answers[step].answer = ta.value.trim();
   }
 
-  function goTo(s)  { _saveCurrent(); _stopSTT(); step=s; _renderStep(); }
+  function goTo(s)  { _saveCurrent(); _stopSTT(); step = s; _renderStep(); }
   function next()   { _saveCurrent(); _stopSTT(); step++; _render(); }
-  function prev()   { _saveCurrent(); _stopSTT(); step>0 ? (step--,_renderStep()) : (step=-1,_renderMode()); }
+  function prev()   { _saveCurrent(); _stopSTT(); step > 0 ? (step--, _renderStep()) : (step = -1, _renderMode()); }
   function skip()   { _stopSTT(); step++; _render(); }
-  function onType(v){ if (step>=0&&step<questions.length) answers[step].answer=v; }
+  function onType(v){ if (step >= 0 && step < questions.length) answers[step].answer = v; }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      3. 한 번에 말하기
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   function startFree() {
-    setStep('자유 녹음','50%');
-    const qList = questions.map(q=>`
+    setStep('자유 녹음', '50%');
+    const qList = questions.map(q => `
       <div style="display:flex;gap:8px;align-items:flex-start;padding:9px 0;border-bottom:.5px solid #f0f0f0">
         <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:2px 8px;border-radius:99px;flex-shrink:0">${q.catLabel}</span>
         <span style="font-size:13px;color:#222;line-height:1.5">${esc(q.q)}</span>
@@ -275,37 +304,65 @@ const Record = (() => {
   function confirmFree() {
     _stopSTT();
     const text = $('text-answer')?.value?.trim() || sttText.trim();
-    questions.forEach((_,i) => { if (!answers[i].answer) answers[i].answer=text; });
+    questions.forEach((_, i) => { if (!answers[i].answer) answers[i].answer = text; });
     step = questions.length;
-    _finalize();
+    _renderFinal();
   }
 
-  function backToMode() { _stopSTT(); step=-1; _renderMode(); }
+  function backToMode() { _stopSTT(); step = -1; _renderMode(); }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     4. 마무리 단계
+     4. 마무리 단계 — 기분 이모티콘 선택 UI 포함
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   function _renderFinal() {
-    setStep('마무리','90%');
-    const done = answers.filter(a=>a.answer).length;
+    setStep('마무리', '90%');
+    const done = answers.filter(a => a.answer).length;
+
+    // 기분 이모티콘 선택 UI
+    const moods = [
+      { emoji: '😄', label: '최고' },
+      { emoji: '😊', label: '좋음' },
+      { emoji: '🙂', label: '보통' },
+      { emoji: '😔', label: '아쉬움' },
+      { emoji: '😤', label: '힘듦' },
+      { emoji: '😴', label: '피곤' },
+      { emoji: '🥰', label: '설렘' },
+      { emoji: '🤔', label: '고민' },
+    ];
+    const moodPickerHTML = `
+      <div class="card">
+        <div class="drawer-label">오늘 기분은요? <span style="color:#bbb;font-weight:400;font-size:11px">(선택 안 해도 괜찮아요)</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0" id="mood-picker">
+          ${moods.map(m => `
+            <button
+              onclick="Record.pickMood('${m.emoji}', this)"
+              style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 10px;border:1.5px solid #eee;border-radius:12px;background:#fafafa;cursor:pointer;transition:all .15s;min-width:52px"
+              data-mood="${m.emoji}">
+              <span style="font-size:22px">${m.emoji}</span>
+              <span style="font-size:10px;color:#888">${m.label}</span>
+            </button>`).join('')}
+        </div>
+      </div>`;
+
     body().innerHTML = `
       <div class="section">
         ${_dots()}
         <div class="card">
           <div style="font-size:13px;color:#888;margin-bottom:10px">
             ${done}개 질문에 답하셨어요.
-            ${done<questions.length?`<span style="color:#D85A30">(${questions.length-done}개 미답변)</span>`:'🎉 모두 완료!'}
+            ${done < questions.length ? `<span style="color:#D85A30">(${questions.length - done}개 미답변)</span>` : '🎉 모두 완료!'}
           </div>
-          ${questions.map((q,i)=>`
+          ${questions.map((q, i) => `
             <div onclick="Record.goTo(${i})" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f5f5f5;border-radius:10px;cursor:pointer;margin-bottom:6px">
-              <span>${answers[i]?.answer?'✅':'⬜'}</span>
+              <span>${answers[i]?.answer ? '✅' : '⬜'}</span>
               <span style="font-size:11px;font-weight:700;color:${q.catColor};background:${q.catBg};padding:1px 7px;border-radius:99px">${q.catLabel}</span>
-              <span style="font-size:12px;color:${answers[i]?.answer?'#222':'#999'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                ${answers[i]?.answer?esc(answers[i].answer.slice(0,30))+'...':'탭해서 답변 추가'}
+              <span style="font-size:12px;color:${answers[i]?.answer ? '#222' : '#999'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                ${answers[i]?.answer ? esc(answers[i].answer.slice(0, 30)) + '...' : '탭해서 답변 추가'}
               </span>
               <span style="font-size:11px;color:#2AADA3">수정</span>
             </div>`).join('')}
         </div>
+        ${moodPickerHTML}
         <div class="card">
           <div class="drawer-label">추가 선택 항목</div>
           <div style="padding:8px 0;border-bottom:.5px solid #f0f0f0">
@@ -322,6 +379,32 @@ const Record = (() => {
         </div>
         <button class="btn-primary" style="width:100%" onclick="Record.finalize()">✨ AI로 일기 완성하기</button>
       </div>`;
+
+    // 이전에 선택한 기분이 있으면 복원
+    if (_chosenMood) _applyMoodUI(_chosenMood);
+  }
+
+  /* 기분 선택 핸들러 */
+  function pickMood(emoji, btn) {
+    // 같은 버튼 다시 누르면 선택 해제
+    if (_chosenMood === emoji) {
+      _chosenMood = '';
+      btn.style.borderColor  = '#eee';
+      btn.style.background   = '#fafafa';
+      btn.style.transform    = '';
+      return;
+    }
+    _chosenMood = emoji;
+    _applyMoodUI(emoji);
+  }
+
+  function _applyMoodUI(emoji) {
+    document.querySelectorAll('#mood-picker button').forEach(b => {
+      const isSelected = b.dataset.mood === emoji;
+      b.style.borderColor = isSelected ? '#3DCFC4' : '#eee';
+      b.style.background  = isSelected ? '#E0F7F5' : '#fafafa';
+      b.style.transform   = isSelected ? 'scale(1.08)' : '';
+    });
   }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -336,42 +419,43 @@ const Record = (() => {
     </div>`;
 
     // 추가 항목
-    const note   = $('free-note')?.value  || '';
-    const child  = $('child-time')?.value || '';
-    const valid  = answers.filter(a=>a.answer);
-    if (note)  valid.push({ question:'자유 메모', category:'etc', catLabel:'✨ 그 외', answer:note });
-    if (child) valid.push({ question:'아이와 함께한 시간', category:'parenting', catLabel:'👨‍👧 육아', answer:child });
+    const note   = $('free-note')?.value   || '';
+    const child  = $('child-time')?.value  || '';
+    const valid  = answers.filter(a => a.answer);
+    if (note)  valid.push({ question: '자유 메모', category: 'etc', catLabel: '✨ 그 외', answer: note });
+    if (child) valid.push({ question: '아이와 함께한 시간', category: 'parenting', catLabel: '👨‍👧 육아', answer: child });
 
     const todos  = await Store.Todos.getAll();
     const today  = Store.today();
     const hlth   = await Store.Health.getByDate(today);
     const result = await API.generateDiary(valid, hlth);
 
-    const diary    = result?.diary    || valid.map(a=>a.answer).join('\n');
+    const diary    = result?.diary    || valid.map(a => a.answer).join('\n');
     const tags     = result?.tags     || [];
-    const mood     = result?.mood     || '😊';
-    const summary  = result?.summary  || diary.slice(0,30);
+    // ── 기분: 사용자 선택 우선, 없으면 AI 결과값 사용 ──
+    const mood     = _chosenMood || result?.mood || '😊';
+    const summary  = result?.summary  || diary.slice(0, 30);
     const feedback = result?.feedback || '';
 
     // 카테고리 그룹
     const grouped = {};
-    valid.forEach(a => { const c=a.category||'etc'; (grouped[c]=grouped[c]||[]).push(a); });
+    valid.forEach(a => { const c = a.category || 'etc'; (grouped[c] = grouped[c] || []).push(a); });
 
-    await Store.Entries.save(today, { diary, tags, mood, summary, answers:valid, categorized:grouped, health:hlth });
+    await Store.Entries.save(today, { diary, tags, mood, summary, answers: valid, categorized: grouped, health: hlth });
     _reset();
 
     // 날씨
-    const amTemp = $('w-am')?.textContent||'';
-    const wBadge = amTemp&&amTemp!=='--°C' ? `🌤 ${amTemp}` : '';
-    const now = new Date(), days=['일','월','화','수','목','금','토'];
-    const dateStr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
+    const amTemp = $('w-am')?.textContent || '';
+    const wBadge = amTemp && amTemp !== '--°C' ? `🌤 ${amTemp}` : '';
+    const now = new Date(), days = ['일', '월', '화', '수', '목', '금', '토'];
+    const dateStr = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
 
     // 카테고리 카드
-    const catCards = Object.entries(grouped).map(([cid,items]) => {
+    const catCards = Object.entries(grouped).map(([cid, items]) => {
       const cat = QuestionPool.getCategoryInfo(cid);
       return `<div class="cat-card">
         <div class="cat-badge" style="color:${cat.color};background:${cat.bg}">${cat.label}</div>
-        ${items.map(i=>`
+        ${items.map(i => `
           <div style="margin-bottom:7px">
             <div class="cat-q">${esc(i.question)}</div>
             <div class="cat-a">${esc(i.answer)}</div>
@@ -382,8 +466,8 @@ const Record = (() => {
     const todoHTML = todos.length ? `
       <div class="diary-result-card">
         <div class="diary-result-label">☑ 오늘 할 일 현황</div>
-        ${todos.map(t=>`<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:${t.done?'#bbb':'#222'};text-decoration:${t.done?'line-through':'none'};padding:4px 0">
-          <span>${t.done?'✅':'⬜'}</span><span>${esc(t.text)}</span>
+        ${todos.map(t => `<div style="display:flex;align-items:center;gap:8px;font-size:13px;color:${t.done ? '#bbb' : '#222'};text-decoration:${t.done ? 'line-through' : 'none'};padding:4px 0">
+          <span>${t.done ? '✅' : '⬜'}</span><span>${esc(t.text)}</span>
         </div>`).join('')}
       </div>` : '';
 
@@ -391,9 +475,9 @@ const Record = (() => {
       <div class="diary-result-card">
         <div class="diary-result-label">💪 오늘 건강 데이터</div>
         <div class="health-mini">
-          <div class="health-chip"><div class="hc-label2">수면점수</div><div class="sc-val" style="color:#534AB7;font-size:16px">${hlth.sleep||'--'}</div></div>
-          <div class="health-chip"><div class="hc-label2">스트레스</div><div class="sc-val" style="color:#D85A30;font-size:16px">${hlth.stress||'--'}</div></div>
-          <div class="health-chip"><div class="hc-label2">러닝</div><div class="sc-val" style="color:#085041;font-size:13px">${hlth.pace||'--'}</div></div>
+          <div class="health-chip"><div class="hc-label2">수면점수</div><div class="sc-val" style="color:#534AB7;font-size:16px">${hlth.sleep || '--'}</div></div>
+          <div class="health-chip"><div class="hc-label2">스트레스</div><div class="sc-val" style="color:#D85A30;font-size:16px">${hlth.stress || '--'}</div></div>
+          <div class="health-chip"><div class="hc-label2">러닝</div><div class="sc-val" style="color:#085041;font-size:13px">${hlth.pace || '--'}</div></div>
         </div>
       </div>` : '';
 
@@ -417,7 +501,7 @@ const Record = (() => {
               <div style="font-size:15px;font-weight:600;color:#222">${dateStr}</div>
               <div style="font-size:12px;color:#999;margin-top:2px">${esc(summary)}</div>
             </div>
-            ${wBadge?`<div style="background:#f5f5f5;border-radius:99px;padding:4px 10px;font-size:12px;color:#888">${wBadge}</div>`:''}
+            ${wBadge ? `<div style="background:#f5f5f5;border-radius:99px;padding:4px 10px;font-size:12px;color:#888">${wBadge}</div>` : ''}
           </div>
         </div>
         <div class="diary-result-card">
@@ -429,7 +513,7 @@ const Record = (() => {
           <div style="display:flex;flex-direction:column;gap:8px">${catCards}</div>
         </div>
         ${todoHTML}${hlthHTML}${fbHTML}
-        <div class="tag-wrap" style="justify-content:center">${tags.map(t=>`<span class="tag tag-g">${esc(t)}</span>`).join('')}</div>
+        <div class="tag-wrap" style="justify-content:center">${tags.map(t => `<span class="tag tag-g">${esc(t)}</span>`).join('')}</div>
         <button class="btn-primary" onclick="App.go('home')" style="width:100%;margin-top:4px">🏠 홈으로 돌아가기</button>
         <button onclick="Record.share()" style="width:100%;background:#f5f5f5;color:#888;border:none;border-radius:14px;padding:11px;font-size:13px;font-family:inherit;cursor:pointer">
           📤 일기 공유 / 내보내기
@@ -438,9 +522,9 @@ const Record = (() => {
   }
 
   function share() {
-    const text = answers.filter(a=>a.answer).map(a=>`[${a.catLabel||''}]\n${a.answer}`).join('\n\n');
-    if (navigator.share) navigator.share({ title:'나의 일기', text });
-    else navigator.clipboard?.writeText(text).then(()=>alert('클립보드에 복사됐어요!'));
+    const text = answers.filter(a => a.answer).map(a => `[${a.catLabel || ''}]\n${a.answer}`).join('\n\n');
+    if (navigator.share) navigator.share({ title: '나의 일기', text });
+    else navigator.clipboard?.writeText(text).then(() => alert('클립보드에 복사됐어요!'));
   }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -469,62 +553,63 @@ const Record = (() => {
   function _startSTT() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert('Chrome 또는 웨일 브라우저에서 사용해주세요.'); return; }
-    if (recog) { try{recog.abort();}catch{} recog=null; }
+    if (recog) { try { recog.abort(); } catch {} recog = null; }
     sttText = '';
     recog = new SR();
-    Object.assign(recog, { lang:'ko-KR', continuous:false, interimResults:true });
+    Object.assign(recog, { lang: 'ko-KR', continuous: false, interimResults: true });
 
     recog.onstart = () => {
       recoding = true;
-      const r=$('voice-ring'), w=$('waveform'), s=$('voice-status'), l=$('stt-label');
-      if(r){r.innerHTML='⏹';r.classList.add('recording');}
-      if(w)w.classList.add('active');
-      if(s){s.textContent='녹음 중 · 탭하면 완료';s.classList.add('on');}
-      if(l){l.textContent='🔴 실시간 변환 중';l.style.color='#2AADA3';}
-      const a=$('stt-actions');if(a)a.style.display='none';
+      const r = $('voice-ring'), w = $('waveform'), s = $('voice-status'), l = $('stt-label');
+      if (r) { r.innerHTML = '⏹'; r.classList.add('recording'); }
+      if (w) w.classList.add('active');
+      if (s) { s.textContent = '녹음 중 · 탭하면 완료'; s.classList.add('on'); }
+      if (l) { l.textContent = '🔴 실시간 변환 중'; l.style.color = '#2AADA3'; }
+      const a = $('stt-actions'); if (a) a.style.display = 'none';
     };
 
     recog.onresult = e => {
-      let interim='', final=sttText;
-      for(let i=e.resultIndex;i<e.results.length;i++){
-        if(e.results[i].isFinal) final+=e.results[i][0].transcript;
-        else interim=e.results[i][0].transcript;
+      let interim = '', final = sttText;
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) final += e.results[i][0].transcript;
+        else interim = e.results[i][0].transcript;
       }
-      sttText=final;
-      const t=$('stt-text');
-      if(t) t.innerHTML=esc(final)+(interim?`<span class="stt-interim"> ${esc(interim)}</span>`:'')+`<span class="stt-cursor"></span>`;
-      const ta=$('text-answer');if(ta)ta.value=final+interim;
+      sttText = final;
+      const t = $('stt-text');
+      if (t) t.innerHTML = esc(final) + (interim ? `<span class="stt-interim"> ${esc(interim)}</span>` : '') + `<span class="stt-cursor"></span>`;
+      const ta = $('text-answer'); if (ta) ta.value = final + interim;
     };
 
-    recog.onerror = e => { if(e.error==='no-speech'&&recoding){try{recog.start();}catch{}} else _stopSTT(); };
-    recog.onend   = () => { if(recoding){try{recog.start();}catch{_stopSTT();}} };
+    recog.onerror = e => { if (e.error === 'no-speech' && recoding) { try { recog.start(); } catch {} } else _stopSTT(); };
+    recog.onend   = () => { if (recoding) { try { recog.start(); } catch { _stopSTT(); } } };
     recog.start();
   }
 
   function _stopSTT() {
     recoding = false;
-    if(recog){recog.onend=null;try{recog.abort();}catch{}recog=null;}
-    const r=$('voice-ring'),w=$('waveform'),s=$('voice-status'),l=$('stt-label');
-    if(r){r.innerHTML='🎙';r.classList.remove('recording');}
-    if(w)w.classList.remove('active');
-    if(s){s.textContent='다시 말하기';s.classList.remove('on');}
-    const text=sttText.trim();
-    const t=$('stt-text');
-    if(t) t.innerHTML=text?esc(text):'<span style="color:#bbb">음성이 인식되지 않았어요</span>';
-    if(l){l.textContent=text?'✓ 변환 완료 · 수정 가능해요':'💬 말하면 여기에 텍스트로 변환돼요';l.style.color=text?'#2AADA3':'#888';}
-    if(text){
-      const a=$('stt-actions');if(a)a.style.display='flex';
-      const ta=$('text-answer');if(ta)ta.value=text;
-      if(step>=0&&step<questions.length)answers[step].answer=text;
+    if (recog) { recog.onend = null; try { recog.abort(); } catch {} recog = null; }
+    const r = $('voice-ring'), w = $('waveform'), s = $('voice-status'), l = $('stt-label');
+    if (r) { r.innerHTML = '🎙'; r.classList.remove('recording'); }
+    if (w) w.classList.remove('active');
+    if (s) { s.textContent = '다시 말하기'; s.classList.remove('on'); }
+    const text = sttText.trim();
+    const t = $('stt-text');
+    if (t) t.innerHTML = text ? esc(text) : '<span style="color:#bbb">음성이 인식되지 않았어요</span>';
+    if (l) { l.textContent = text ? '✓ 변환 완료 · 수정 가능해요' : '💬 말하면 여기에 텍스트로 변환돼요'; l.style.color = text ? '#2AADA3' : '#888'; }
+    if (text) {
+      const a = $('stt-actions'); if (a) a.style.display = 'flex';
+      const ta = $('text-answer'); if (ta) ta.value = text;
+      if (step >= 0 && step < questions.length) answers[step].answer = text;
     }
   }
 
-  function retryVoice() { sttText=''; const t=$('stt-text');if(t)t.innerHTML=''; const a=$('stt-actions');if(a)a.style.display='none'; _startSTT(); }
+  function retryVoice()   { sttText = ''; const t = $('stt-text'); if (t) t.innerHTML = ''; const a = $('stt-actions'); if (a) a.style.display = 'none'; _startSTT(); }
   function confirmVoice() { _saveCurrent(); _stopSTT(); step++; _render(); }
 
   return {
     init, startStep, startFree, next, prev, skip, goTo,
     onGarmin, saveManual, onType, confirmFree, backToMode,
     finalize, share, toggleVoice, retryVoice, confirmVoice,
+    pickMood,
   };
 })();
