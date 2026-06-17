@@ -209,11 +209,6 @@
             <div class="set-text"><div class="st-title">AI 피드백 스타일</div><div class="st-sub" id="feedback-style-label">따뜻하고 공감적으로</div></div>
             <span class="set-chevron">›</span>
           </div>
-          <div class="set-row" onclick="Settings.openApiKeyDrawer()">
-            <div class="set-icon" style="background:#E1F5EE">🔑</div>
-            <div class="set-text"><div class="st-title">Claude API 키</div><div class="st-sub" id="api-key-label">탭해서 키 입력</div></div>
-            <span class="set-chevron">›</span>
-          </div>
         </div>
       </div>
       <div class="section">
@@ -278,8 +273,6 @@
 <script src="js/settings.js"></script>
 
 <script>
-  // API.setKey 별칭 (firebase.js에서 호출)
-  const _origSetKey = API.setKey;
   initFirebase();
 </script>
 
