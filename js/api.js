@@ -1,23 +1,26 @@
 /* ====================================================
-   api.js — Google Gemini API (Cloudflare Worker 프록시 경유)
+   api.js — Groq API (Cloudflare Worker 프록시 경유)
    ====================================================
    ▸ API 키는 Cloudflare Worker 서버에서만 보관
-   ▸ 브라우저 → Worker 프록시 → Gemini API
+   ▸ 브라우저 → Worker 프록시 → Groq API
    ▸ 가민 이미지 여러 장: Promise.all 병렬 처리
-   ▸ Gemini 무료 티어 사용 (gemini-2.0-flash)
+   ▸ Groq 완전 무료 (가입만 하면 사용 가능)
+   ▸ 텍스트: llama-3.3-70b-versatile
+   ▸ 이미지(Vision): llama-3.2-90b-vision-preview (가민 파싱용)
    ==================================================== */
 const API = (() => {
 
   // ── Cloudflare Worker 프록시 URL ──────────────────
-  const PROXY_URL = 'https://diary-claude-proxy.ththoughts.workers.dev';
-  const MODEL = 'gemini-2.0-flash-lite';
+  const PROXY_URL    = 'https://diary-claude-proxy.ththoughts.workers.dev';
+  const TEXT_MODEL   = 'llama-3.3-70b-versatile';
+  const VISION_MODEL = 'llama-3.2-90b-vision-preview';
 
-  // 하위 호환용 (settings.js에서 호출하는 경우 대비)
+  // 하위 호환용
   const setKey  = () => {};
   const hasKey  = () => true;
 
   /* ── 공통 fetch (타임아웃 30초) ──
-     body 형식: { contents: [...], systemInstruction?: {...}, generationConfig?: {...} }
+     body: { messages: [...], model }  (OpenAI 호환 형식)
   ── */
   async function _fetch(body, timeoutMs = 30000) {
     const ctrl  = new AbortController();
@@ -26,7 +29,7 @@ const API = (() => {
       const res = await fetch(PROXY_URL, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ ...body, model: MODEL }),
+        body:    JSON.stringify(body),
         signal:  ctrl.signal,
       });
       clearTimeout(timer);
@@ -36,8 +39,8 @@ const API = (() => {
         return null;
       }
       const data = await res.json();
-      // Gemini 응답 구조: candidates[0].content.parts[0].text
-      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+      // OpenAI 호환 응답 구조: choices[0].message.content
+      return data.choices?.[0]?.message?.content ?? null;
     } catch (e) {
       clearTimeout(timer);
       if (e.name === 'AbortError') console.warn('[API] 타임아웃');
@@ -78,9 +81,12 @@ const API = (() => {
     const userText = `${bodyText}${health ? `\n\n건강: 수면${health.sleep || '--'} 스트레스${health.stress || '--'} 러닝${health.pace || '없음'}` : ''}`;
 
     const raw = await _fetch({
-      systemInstruction: { parts: [{ text: systemText }] },
-      contents: [{ role: 'user', parts: [{ text: userText }] }],
-      generationConfig: { maxOutputTokens: 800 },
+      model: TEXT_MODEL,
+      max_tokens: 800,
+      messages: [
+        { role: 'system', content: systemText },
+        { role: 'user',   content: userText },
+      ],
     });
     return _json(raw) || {
       diary:    answers.filter(a => a.answer).map(a => a.answer).join('\n\n'),
@@ -102,15 +108,18 @@ const API = (() => {
     const userText = entries.map(e => `[${e.date}] ${e.diary || e.summary || ''}`).join('\n');
 
     const raw = await _fetch({
-      systemInstruction: { parts: [{ text: systemText }] },
-      contents: [{ role: 'user', parts: [{ text: `일기:\n${userText}` }] }],
-      generationConfig: { maxOutputTokens: 1200 },
+      model: TEXT_MODEL,
+      max_tokens: 1200,
+      messages: [
+        { role: 'system', content: systemText },
+        { role: 'user',   content: `일기:\n${userText}` },
+      ],
     });
     return _json(raw);
   }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     가민 이미지 파싱 — 단일 이미지 (Gemini Vision)
+     가민 이미지 파싱 — 단일 이미지 (Vision 모델)
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function _parseSingleGarmin(base64, mediaType, type) {
     const prompts = {
@@ -120,14 +129,15 @@ const API = (() => {
 {"duration":"42분","pace":"5'38\\"","heartRate":숫자,"calories":숫자,"distance":"7.4km"}`,
     };
     const raw = await _fetch({
-      contents: [{
+      model: VISION_MODEL,
+      max_tokens: 300,
+      messages: [{
         role: 'user',
-        parts: [
-          { inline_data: { mime_type: mediaType || 'image/jpeg', data: base64 } },
-          { text: prompts[type] || prompts.health },
+        content: [
+          { type: 'text', text: prompts[type] || prompts.health },
+          { type: 'image_url', image_url: { url: `data:${mediaType || 'image/jpeg'};base64,${base64}` } },
         ],
       }],
-      generationConfig: { maxOutputTokens: 300 },
     }, 20000);
     return _json(raw);
   }
