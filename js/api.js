@@ -10,7 +10,7 @@ const API = (() => {
 
   // ── Cloudflare Worker 프록시 URL ──────────────────
   const PROXY_URL = 'https://diary-claude-proxy.ththoughts.workers.dev';
-  const MODEL     = 'gemini-2.0-flash';
+  const MODEL = 'gemini-2.0-flash-lite';
 
   // 하위 호환용 (settings.js에서 호출하는 경우 대비)
   const setKey  = () => {};
