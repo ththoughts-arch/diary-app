@@ -1,22 +1,24 @@
 /* ====================================================
-   api.js — Claude API (Firebase Functions 프록시 경유)
+   api.js — Google Gemini API (Cloudflare Worker 프록시 경유)
    ====================================================
-   ▸ API 키는 Firebase Functions 서버에서만 보관
-   ▸ 브라우저 → Functions 프록시 → Anthropic API
+   ▸ API 키는 Cloudflare Worker 서버에서만 보관
+   ▸ 브라우저 → Worker 프록시 → Gemini API
    ▸ 가민 이미지 여러 장: Promise.all 병렬 처리
+   ▸ Gemini 무료 티어 사용 (gemini-2.0-flash)
    ==================================================== */
 const API = (() => {
 
-  // ── Firebase Functions 프록시 URL ──────────────────
-  // 배포 후 실제 URL로 교체하세요 (STEP 3 가이드 참고)
+  // ── Cloudflare Worker 프록시 URL ──────────────────
   const PROXY_URL = 'https://diary-claude-proxy.ththoughts.workers.dev';
-  const MODEL     = 'claude-sonnet-4-20250514';
+  const MODEL     = 'gemini-2.0-flash';
 
-  // 하위 호환용 (settings.js에서 호출하는 경우 대비 — 실제로는 서버에서 관리)
+  // 하위 호환용 (settings.js에서 호출하는 경우 대비)
   const setKey  = () => {};
-  const hasKey  = () => true; // 프록시가 항상 처리하므로 true
+  const hasKey  = () => true;
 
-  /* ── 공통 fetch (타임아웃 30초) ── */
+  /* ── 공통 fetch (타임아웃 30초) ──
+     body 형식: { contents: [...], systemInstruction?: {...}, generationConfig?: {...} }
+  ── */
   async function _fetch(body, timeoutMs = 30000) {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -34,7 +36,8 @@ const API = (() => {
         return null;
       }
       const data = await res.json();
-      return data.content?.[0]?.text ?? null;
+      // Gemini 응답 구조: candidates[0].content.parts[0].text
+      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
     } catch (e) {
       clearTimeout(timer);
       if (e.name === 'AbortError') console.warn('[API] 타임아웃');
@@ -69,12 +72,16 @@ const API = (() => {
       .map(([c, items]) => `[${catLabels[c] || c}]\n${items.map(i => `Q: ${i.question}\nA: ${i.answer}`).join('\n')}`)
       .join('\n\n');
 
-    const system = `사용자의 하루 기록을 카테고리를 자연스럽게 녹여 1인칭 일기 문체로 300~400자 작성하세요.
-반드시 JSON만 반환 (다른 텍스트 없이):
+    const systemText = `사용자의 하루 기록을 카테고리를 자연스럽게 녹여 1인칭 일기 문체로 300~400자 작성하세요.
+반드시 JSON만 반환 (다른 텍스트 없이, 마크다운 코드블록 없이):
 {"diary":"일기내용","tags":["#태그1","#태그2","#태그3"],"mood":"😊","summary":"30자이내요약","feedback":"따뜻한피드백1~2문장"}`;
-    const user = `${bodyText}${health ? `\n\n건강: 수면${health.sleep || '--'} 스트레스${health.stress || '--'} 러닝${health.pace || '없음'}` : ''}`;
+    const userText = `${bodyText}${health ? `\n\n건강: 수면${health.sleep || '--'} 스트레스${health.stress || '--'} 러닝${health.pace || '없음'}` : ''}`;
 
-    const raw = await _fetch({ max_tokens: 800, system, messages: [{ role: 'user', content: user }] });
+    const raw = await _fetch({
+      systemInstruction: { parts: [{ text: systemText }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: { maxOutputTokens: 800 },
+    });
     return _json(raw) || {
       diary:    answers.filter(a => a.answer).map(a => a.answer).join('\n\n'),
       tags:     [],
@@ -89,74 +96,75 @@ const API = (() => {
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function generateReport(entries) {
     if (!entries.length) return null;
-    const system = `사용자의 일기를 분석해 리포트를 작성하세요.
-반드시 JSON만 반환:
+    const systemText = `사용자의 일기를 분석해 리포트를 작성하세요.
+반드시 JSON만 반환 (마크다운 코드블록 없이):
 {"title":"제목","narrative":"2-3문장총평","keywords":["#키워드"],"moodSummary":"감정흐름","lifeSummary":{"work":{"highlight":"핵심","detail":"상세"},"family":{"highlight":"핵심","detail":"상세"},"health":{"highlight":"핵심","detail":"상세"},"money":{"highlight":"핵심","detail":"상세"}},"bestMoment":"기억에남는순간","bestQuote":"인상적인문장","nextTips":["제안1","제안2","제안3"]}`;
-    const user = entries.map(e => `[${e.date}] ${e.diary || e.summary || ''}`).join('\n');
-    const raw  = await _fetch({ max_tokens: 1200, system, messages: [{ role: 'user', content: `일기:\n${user}` }] });
+    const userText = entries.map(e => `[${e.date}] ${e.diary || e.summary || ''}`).join('\n');
+
+    const raw = await _fetch({
+      systemInstruction: { parts: [{ text: systemText }] },
+      contents: [{ role: 'user', parts: [{ text: `일기:\n${userText}` }] }],
+      generationConfig: { maxOutputTokens: 1200 },
+    });
     return _json(raw);
   }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     가민 이미지 파싱 — 단일 이미지
+     가민 이미지 파싱 — 단일 이미지 (Gemini Vision)
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function _parseSingleGarmin(base64, mediaType, type) {
     const prompts = {
-      health: `이 가민 앱 스크린샷에서 수면/스트레스 수치를 찾아 JSON만 반환:
+      health: `이 가민 앱 스크린샷에서 수면/스트레스 수치를 찾아 JSON만 반환 (마크다운 코드블록 없이):
 {"sleepScore":숫자or null,"totalSleep":"시간or null","deepSleep":"시간or null","stressScore":숫자or null}`,
-      run: `이 가민 앱 러닝 스크린샷에서 수치를 찾아 JSON만 반환:
+      run: `이 가민 앱 러닝 스크린샷에서 수치를 찾아 JSON만 반환 (마크다운 코드블록 없이):
 {"duration":"42분","pace":"5'38\\"","heartRate":숫자,"calories":숫자,"distance":"7.4km"}`,
     };
     const raw = await _fetch({
-      max_tokens: 300,
-      messages: [{
+      contents: [{
         role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: base64 } },
-          { type: 'text',  text:  prompts[type] || prompts.health },
+        parts: [
+          { inline_data: { mime_type: mediaType || 'image/jpeg', data: base64 } },
+          { text: prompts[type] || prompts.health },
         ],
       }],
+      generationConfig: { maxOutputTokens: 300 },
     }, 20000);
     return _json(raw);
   }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      가민 이미지 파싱 — 여러 장 병렬 처리 (Promise.all)
-     images: [{ base64, mediaType, type }]
-     반환:   { health: {...}, run: {...} }  각 타입별 머지 결과
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
   async function parseGarminBatch(images) {
     if (!images.length) return {};
 
-    // ── 모든 이미지를 동시에 API 요청 ──
     const results = await Promise.all(
       images.map(img => _parseSingleGarmin(img.base64, img.mediaType, img.type))
     );
 
-    // ── 타입별로 결과 머지 (여러 장이면 마지막 유효값 우선) ──
     const merged = { health: null, run: null };
     results.forEach((result, i) => {
       if (!result) return;
       const type = images[i].type;
       if (type === 'health') {
         merged.health = merged.health || {};
-        if (result.sleepScore  != null) { merged.health.sleepScore  = result.sleepScore; }
-        if (result.totalSleep  != null) { merged.health.totalSleep  = result.totalSleep; }
-        if (result.deepSleep   != null) { merged.health.deepSleep   = result.deepSleep; }
-        if (result.stressScore != null) { merged.health.stressScore = result.stressScore; }
+        if (result.sleepScore  != null) merged.health.sleepScore  = result.sleepScore;
+        if (result.totalSleep  != null) merged.health.totalSleep  = result.totalSleep;
+        if (result.deepSleep   != null) merged.health.deepSleep   = result.deepSleep;
+        if (result.stressScore != null) merged.health.stressScore = result.stressScore;
       } else if (type === 'run') {
         merged.run = merged.run || {};
-        if (result.duration  ) { merged.run.duration  = result.duration;  }
-        if (result.pace      ) { merged.run.pace       = result.pace;      }
-        if (result.heartRate ) { merged.run.heartRate  = result.heartRate; }
-        if (result.calories  ) { merged.run.calories   = result.calories;  }
-        if (result.distance  ) { merged.run.distance   = result.distance;  }
+        if (result.duration)  merged.run.duration  = result.duration;
+        if (result.pace)      merged.run.pace       = result.pace;
+        if (result.heartRate) merged.run.heartRate  = result.heartRate;
+        if (result.calories)  merged.run.calories   = result.calories;
+        if (result.distance)  merged.run.distance   = result.distance;
       }
     });
     return merged;
   }
 
-  /* 하위 호환 단일 인터페이스 (record.js에서 단일 이미지 호출 시) */
+  /* 하위 호환 단일 인터페이스 */
   async function parseGarmin(base64, mediaType, type) {
     return _parseSingleGarmin(base64, mediaType, type);
   }
