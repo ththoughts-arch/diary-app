@@ -1,19 +1,21 @@
 /* ====================================================
-   api.js — Groq API (Cloudflare Worker 프록시 경유)
+   api.js — Groq API (Vercel Serverless Function 프록시 경유)
    ====================================================
-   ▸ API 키는 Cloudflare Worker 서버에서만 보관
-   ▸ 브라우저 → Worker 프록시 → Groq API
+   ▸ API 키는 Vercel 환경변수(GROQ_API_KEY)에서만 보관
+   ▸ 브라우저 → Vercel 프록시(/api/groq) → Groq API
+   ▸ Cloudflare Workers는 Groq가 403으로 차단하므로 사용 불가 (HANDOVER.md 참고)
    ▸ 가민 이미지 여러 장: Promise.all 병렬 처리
    ▸ Groq 완전 무료 (가입만 하면 사용 가능)
    ▸ 텍스트: llama-3.3-70b-versatile
-   ▸ 이미지(Vision): llama-3.2-90b-vision-preview (가민 파싱용)
+   ▸ 이미지(Vision): meta-llama/llama-4-scout-17b-16e-instruct
+     (llama-3.2-90b-vision-preview는 Groq에서 deprecated 처리되어 제거됨)
    ==================================================== */
 const API = (() => {
 
-  // ── Cloudflare Worker 프록시 URL ──────────────────
-const PROXY_URL = 'https://diary-app-one-pi.vercel.app/api/groq';
+  // ── Vercel 프록시 URL ──────────────────
+  const PROXY_URL    = 'https://diary-app-one-pi.vercel.app/api/groq';
   const TEXT_MODEL   = 'llama-3.3-70b-versatile';
-  const VISION_MODEL = 'llama-3.2-90b-vision-preview';
+  const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
   // 하위 호환용
   const setKey  = () => {};
@@ -33,12 +35,11 @@ const PROXY_URL = 'https://diary-app-one-pi.vercel.app/api/groq';
         signal:  ctrl.signal,
       });
       clearTimeout(timer);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.error('[API] 프록시 오류:', err);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        console.error('[API] 프록시/Groq 오류:', res.status, data.error || data);
         return null;
       }
-      const data = await res.json();
       // OpenAI 호환 응답 구조: choices[0].message.content
       return data.choices?.[0]?.message?.content ?? null;
     } catch (e) {
