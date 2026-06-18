@@ -177,6 +177,23 @@ const Drawer = (() => {
         <div class="drawer-label">오늘의 일기</div>
         <div style="font-size:14px;color:#222;line-height:1.8">${esc(e.diary||e.summary||'')}</div>
       </div>
+      ${e.categorized && Object.keys(e.categorized).length ? `
+      <div>
+        <div class="drawer-label">📂 카테고리별 원본 기록</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${Object.entries(e.categorized).map(([cid, items]) => {
+            const cat = QuestionPool.getCategoryInfo(cid);
+            return `<div class="cat-card">
+              <div class="cat-badge" style="color:${cat.color};background:${cat.bg}">${cat.label}</div>
+              ${items.map(i => `
+                <div style="margin-bottom:7px">
+                  <div class="cat-q">${esc(i.question)}</div>
+                  <div class="cat-a">${esc(i.answer)}</div>
+                </div>`).join('')}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : ''}
       ${e.health?`
       <div>
         <div class="drawer-label">건강 데이터</div>
