@@ -11,7 +11,7 @@
 const API = (() => {
 
   // ── Cloudflare Worker 프록시 URL ──────────────────
-  const PROXY_URL    = 'https://diary-claude-proxy.ththoughts.workers.dev';
+const PROXY_URL = 'https://diary-app-one-pi.vercel.app/api/groq';
   const TEXT_MODEL   = 'llama-3.3-70b-versatile';
   const VISION_MODEL = 'llama-3.2-90b-vision-preview';
 
